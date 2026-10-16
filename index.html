@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Cartographer's Quill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
+<style>
+  :root { --ui: #ead9b2; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(ellipse at 50% 42%, #3d2a19 0%, #24180e 55%, #120b06 100%);
+    font-family: "IM Fell English", Georgia, serif;
+    color: var(--ui);
+  }
+  #stage { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; transform-origin: 0 0; }
+  #stage canvas { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; }
+  #bg { filter: drop-shadow(0 20px 34px rgba(0,0,0,.6)); }
+  #wash { opacity: 0; transition: opacity 4s ease; mix-blend-mode: multiply; }
+  #wash.on { opacity: 1; }
+  #ink { mix-blend-mode: multiply; }
+  .quill { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; will-change: transform; transform-origin: 0 0; }
+  #quillShadow { filter: blur(4px); opacity: .3; }
+  #ui { position: fixed; right: 16px; bottom: 14px; display: flex; gap: 6px; z-index: 5; opacity: .5; transition: opacity .3s; }
+  #ui:hover, #ui:focus-within { opacity: 1; }
+  #ui button { font: 15px "IM Fell English", Georgia, serif; color: var(--ui); background: rgba(24,16,9,.72);
+    border: 1px solid rgba(234,217,178,.3); border-radius: 3px; padding: 5px 11px; cursor: pointer; }
+  #ui button:hover { border-color: rgba(234,217,178,.75); }
+  #ui button.on { background: rgba(234,217,178,.16); border-color: rgba(234,217,178,.7); }
+  #progress { position: fixed; left: 0; bottom: 0; height: 2px; width: 0; background: rgba(234,217,178,.4); z-index: 5; }
+  @media (max-width: 640px) {
+    #ui { left: 8px; right: 8px; justify-content: center; flex-wrap: wrap; }
+    #ui button { font-size: 13px; padding: 4px 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bg"></canvas>
+  <canvas id="wash"></canvas>
+  <canvas id="ink"></canvas>
+  <svg id="quillShadow" class="quill" width="1" height="1" aria-hidden="true">
+    <g fill="#140b04"><path class="vl"/><path class="vr"/><path class="bar"/><path class="nib"/></g>
+    <path class="shaft" fill="none" stroke="#140b04" stroke-width="2.4"/>
+  </svg>
+  <svg id="quill" class="quill" width="1" height="1" aria-hidden="true">
+    <defs>
+      <linearGradient id="gVL" gradientUnits="userSpaceOnUse" x1="-30" y1="0" x2="10" y2="0">
+        <stop offset="0" stop-color="#bba981"/><stop offset=".45" stop-color="#ece1c8"/><stop offset="1" stop-color="#fdf8ec"/>
+      </linearGradient>
+      <linearGradient id="gVR" gradientUnits="userSpaceOnUse" x1="2" y1="0" x2="26" y2="0">
+        <stop offset="0" stop-color="#faf4e6"/><stop offset="1" stop-color="#c7b590"/>
+      </linearGradient>
+      <linearGradient id="gB" gradientUnits="userSpaceOnUse" x1="-3.5" y1="0" x2="3.5" y2="0">
+        <stop offset="0" stop-color="#9c855c"/><stop offset=".45" stop-color="#f5ecd8"/><stop offset="1" stop-color="#8f7a52"/>
+      </linearGradient>
+      <linearGradient id="gTip" gradientUnits="userSpaceOnUse" x1="0" y1="-330" x2="0" y2="-240">
+        <stop offset="0" stop-color="#7a5a36" stop-opacity=".55"/><stop offset="1" stop-color="#7a5a36" stop-opacity="0"/>
+      </linearGradient>
+      <clipPath id="cL"><path class="vl"/></clipPath>
+      <clipPath id="cR"><path class="vr"/></clipPath>
+    </defs>
+    <path class="vl" fill="url(#gVL)"/>
+    <path class="vr" fill="url(#gVR)"/>
+    <g clip-path="url(#cL)">
+      <path id="barbsL" fill="none" stroke="#9b8660" stroke-width=".55" opacity=".55"/>
+      <rect x="-40" y="-330" width="60" height="90" fill="url(#gTip)"/>
+    </g>
+    <g clip-path="url(#cR)">
+      <path id="barbsR" fill="none" stroke="#9b8660" stroke-width=".55" opacity=".5"/>
+      <rect x="0" y="-330" width="40" height="90" fill="url(#gTip)"/>
+    </g>
+    <path d="M2.9,-150 l-28,-17 M1.9,-118 l-20,-11 M5.4,-212 l-22,-16 M4.1,-178 l18,-17" stroke="#f8f1e2" stroke-width="1.3" stroke-linecap="round"/>
+    <path class="vl" fill="none" stroke="#8a7651" stroke-width=".7" opacity=".65"/>
+    <path class="vr" fill="none" stroke="#8a7651" stroke-width=".7" opacity=".65"/>
+    <path class="shaft" fill="none" stroke="#a48e66" stroke-width="2.4" stroke-linecap="round"/>
+    <path class="shaft" fill="none" stroke="#fffaf0" stroke-width=".8" stroke-linecap="round"/>
+    <path class="bar" fill="url(#gB)" stroke="#6c593a" stroke-width=".6"/>
+    <path class="nib" fill="#20140a"/>
+    <path d="M0,-1.5 L0,-10" stroke="#6f5d42" stroke-width=".5"/>
+    <circle cx="0" cy="-13" r=".9" fill="#6f5d42"/>
+  </svg>
+</div>
+<div id="ui">
+  <button id="btnPause" title="Space">Pause</button>
+  <button data-speed="1" class="on">1×</button>
+  <button data-speed="2">2×</button>
+  <button data-speed="4">4×</button>
+  <button id="btnRedraw" title="R">Redraw</button>
+  <button id="btnNew" title="N">New world</button>
+</div>
+<div id="progress"></div>
+<script>
+'use strict';
+// ================= utilities =================
+const W = 1600, H = 1000;
+const $ = id => document.getElementById(id);
+const stage = $('stage'), cvBg = $('bg'), cvWash = $('wash'), cvInk = $('ink');
+const quillEl = $('quill'), shadowEl = $('quillShadow');
+let bctx, wctx, ictx, RES = 1;
+
+let rng = Math.random;
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rand = (a = 0, b = 1) => a + (b - a) * rng();
+const randi = (a, b) => Math.floor(a + (b - a + 1) * rng());
+const pick = arr => arr[Math.floor(rng() * arr.length)];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const L2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+// seeded 2D gradient noise + fbm
+function makeNoise(seed) {
+  const r = mulberry32(seed), p = new Uint8Array(512), gx = new Float32Array(256), gy = new Float32Array(256);
+  const perm = [...Array(256).keys()];
+  for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+  for (let i = 0; i < 256; i++) { const a = r() * Math.PI * 2; gx[i] = Math.cos(a); gy[i] = Math.sin(a); }
+  const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+  function n2(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, X = xi & 255, Y = yi & 255;
+    const h00 = p[X + p[Y]], h10 = p[X + 1 + p[Y]], h01 = p[X + p[Y + 1]], h11 = p[X + 1 + p[Y + 1]];
+    const d00 = gx[h00] * xf + gy[h00] * yf, d10 = gx[h10] * (xf - 1) + gy[h10] * yf;
+    const d01 = gx[h01] * xf + gy[h01] * (yf - 1), d11 = gx[h11] * (xf - 1) + gy[h11] * (yf - 1);
+    const u = fade(xf), v = fade(yf);
+    return ((d00 + (d10 - d00) * u) * (1 - v) + (d01 + (d11 - d01) * u) * v) * 1.414;
+  }
+  function fbm(x, y, oct = 5) {
+    let s = 0, a = 1, f = 1, n = 0;
+    for (let i = 0; i < oct; i++) { s += a * n2(x * f + i * 17.3, y * f - i * 9.1); n += a; a *= .5; f *= 2.03; }
+    return s / n;
+  }
+  return { n2, fbm };
+}
+
+// ================= names =================
+const SYL_A = ['Al','Bel','Cor','Dra','El','Fen','Gal','Hal','Ith','Kar','Lor','Mar','Nor','Oth','Pel','Quel','Ral','Sar','Tal','Ul','Val','Wyn','Yr','Zan','Aer','Bry','Cael','Dun','Eld','Fal','Gwen','Hav','Ist','Mor','Ny','Sil','Thal','Ves','Ash','Brin','Cal','Ever','Grim','Rav','Stor','Tir'];
+const SYL_B = ['a','e','i','o','an','ar','en','er','in','or','un','ae','ia','ul','ith','ad','am','ys'];
+const SYL_C = ['dor','mar','wyn','heim','gard','mere','reth','vale','moor','thas','ria','nor','lan','dell','ros','thil','grim','wick','ford','holt','mund','os','eth','fell','hold','spire','crest','haven'];
+const SEA_A = ['Sapphire','Whispering','Shivering','Sunken','Amber','Silent','Serpent','Starlit','Weeping','Pale','Forgotten','Glass','Mourning','Drowned','Hollow','Ember'];
+const SEA_B = ['Sea','Sea','Ocean','Deep','Gulf','Expanse','Waters','Reach'];
+const usedNames = new Set();
+function makeName() { let s = pick(SYL_A); if (rng() < .5) s += pick(SYL_B); s += pick(SYL_C); return s.replace(/(.)\1\1/g, '$1$1'); }
+function uniqueName() {
+  for (let i = 0; i < 60; i++) { const n = makeName(); if (!usedNames.has(n) && n.length <= 11) { usedNames.add(n); return n; } }
+  return makeName();
+}
+function seaName() {
+  for (let i = 0; i < 30; i++) { const n = 'The ' + pick(SEA_A) + ' ' + pick(SEA_B); if (!usedNames.has(n)) { usedNames.add(n); return n; } }
+  return 'The Nameless Sea';
+}
+
+// ================= quill geometry =================
+(function buildQuill() {
+  const D = {
+    vl: 'M0.7,-80 C-9,-100 -25,-150 -29,-205 C-32,-256 -14,-300 12,-318 C6.8,-262 3.2,-170 0.7,-80Z',
+    vr: 'M1.4,-98 C12,-122 22,-172 24.5,-222 C26.5,-266 22,-300 12,-318 C7.4,-262 4,-175 1.4,-98Z',
+    bar: 'M-3.3,-68 L-2.7,-19 L2.7,-19 L3.5,-68 Q0.1,-72 -3.3,-68Z',
+    nib: 'M-2.7,-19 Q-2.2,-7 0,0 Q2.2,-7 2.7,-19Z',
+    shaft: 'M0.4,-62 Q3,-190 12,-318'
+  };
+  for (const k in D) document.querySelectorAll('.' + k).forEach(e => e.setAttribute('d', D[k]));
+  const sx = y => { const t = (-62 - y) / 256; return .4 + 5.2 * t + 6.4 * t * t; };
+  let l = '', r = '';
+  for (let y = -82; y > -318; y -= 2.4) {
+    const x = sx(y).toFixed(2), yy = y.toFixed(1);
+    l += `M${x},${yy}l-46,-24`; r += `M${x},${yy}l40,-30`;
+  }
+  $('barbsL').setAttribute('d', l); $('barbsR').setAttribute('d', r);
+})();
+
+// ================= canvases & layout =================
+function setupCanvases() {
+  const fit = Math.min((innerWidth - 24) / W, (innerHeight - 24) / H);
+  RES = clamp(fit * (window.devicePixelRatio || 1), 1, 2);
+  for (const c of [cvBg, cvWash, cvInk]) { c.width = Math.round(W * RES); c.height = Math.round(H * RES); }
+  bctx = cvBg.getContext('2d'); wctx = cvWash.getContext('2d'); ictx = cvInk.getContext('2d');
+  for (const c of [bctx, wctx, ictx]) c.setTransform(RES, 0, 0, RES, 0, 0);
+}
+function layout() {
+  const s = Math.min((innerWidth - 24) / W, (innerHeight - 24) / H);
+  stage.style.transform = `translate(${(innerWidth - W * s) / 2}px,${(innerHeight - H * s) / 2}px) scale(${s})`;
+}
+
+// ================= terrain field =================
+const CS = 5, GW = Math.ceil(W / CS) + 1, GH = Math.ceil(H / CS) + 1, GN = GW * GH;
+const FR = { x0: 56, y0: 56, x1: 1544, y1: 944 };          // inner frame
+let nA, nB, nC, nD, field, mfield, landDist, seaDist, comp, compSize, compCells, landCells = 0, PCT;
+let reserved = [], blobs = [];
+
+function rawHeight(x, y) {
+  let h = nA.fbm(x * .0027, y * .0027, 6) * 1.3;
+  for (const b of blobs) { const dx = (x - b.x) / b.rx, dy = (y - b.y) / b.ry; h += b.s * Math.exp(-(dx * dx + dy * dy)); }
+  const e = Math.min(x - FR.x0, FR.x1 - x, y - FR.y0, FR.y1 - y);
+  if (e < 140) h -= Math.pow(1 - Math.max(e, 0) / 140, 2) * 1.3;
+  for (const r of reserved) {
+    const dx = Math.max(r.x0 - x, 0, x - r.x1), dy = Math.max(r.y0 - y, 0, y - r.y1), d = Math.hypot(dx, dy);
+    if (d < 70) h -= (1 - d / 70) * 1.2;
+  }
+  return h;
+}
+
+function buildField() {
+  blobs = [];
+  const cells = shuffle([[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]]), nb = randi(3, 4);
+  for (let i = 0; i < nb; i++) {
+    const [cx, cy] = cells[i];
+    blobs.push({ x: 280 + cx * 520 + rand(-120, 120), y: 300 + cy * 400 + rand(-90, 90), rx: rand(170, 320), ry: rand(140, 260), s: rand(.5, .8) });
+  }
+  field = new Float32Array(GN); mfield = new Float32Array(GN);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) field[j * GW + i] = rawHeight(i * CS, j * CS);
+  // normalise so that roughly a third of the sheet is land
+  const sorted = Float32Array.from(field).sort();
+  const shift = sorted[Math.floor(GN * (1 - rand(.3, .37)))];
+  for (let k = 0; k < GN; k++) field[k] -= shift;
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const k = j * GW + i;
+    if (i === 0 || j === 0 || i === GW - 1 || j === GH - 1) field[k] = -2;
+    const r = 1 - Math.abs(nB.n2(i * CS * .0045, j * CS * .0045));
+    mfield[k] = field[k] + .32 * r * r * r;                     // ridged "mountain-ness"
+  }
+}
+
+function bil(arr, x, y) {
+  const gx = x / CS, gy = y / CS, i = Math.floor(gx), j = Math.floor(gy);
+  if (i < 0 || j < 0 || i >= GW - 1 || j >= GH - 1) return -2;
+  const u = gx - i, v = gy - j, k = j * GW + i;
+  return (arr[k] * (1 - u) + arr[k + 1] * u) * (1 - v) + (arr[k + GW] * (1 - u) + arr[k + GW + 1] * u) * v;
+}
+const hAt = (x, y) => bil(field, x, y);
+const mAt = (x, y) => bil(mfield, x, y);
+
+// marching squares -> closed loops of [x,y]
+function contours(t) {
+  const segs = [], pts = new Map(), adj = new Map();
+  const f = (i, j) => field[j * GW + i];
+  function ep(type, i, j) {
+    const k = (type * GH + j) * GW + i;
+    if (!pts.has(k)) {
+      const v1 = f(i, j), v2 = type ? f(i, j + 1) : f(i + 1, j), u = (t - v1) / (v2 - v1);
+      pts.set(k, type ? [i * CS, (j + u) * CS] : [(i + u) * CS, j * CS]);
+    }
+    return k;
+  }
+  function addSeg(a, b) {
+    const id = segs.length; segs.push([a, b]);
+    for (const k of [a, b]) { let l = adj.get(k); if (!l) adj.set(k, l = []); l.push(id); }
+  }
+  for (let j = 0; j < GH - 1; j++) for (let i = 0; i < GW - 1; i++) {
+    const a = f(i, j) > t, b = f(i + 1, j) > t, c = f(i + 1, j + 1) > t, d = f(i, j + 1) > t;
+    if (a === b && b === c && c === d) continue;
+    const T = a !== b ? ep(0, i, j) : -1, R = b !== c ? ep(1, i + 1, j) : -1;
+    const B = d !== c ? ep(0, i, j + 1) : -1, L = a !== d ? ep(1, i, j) : -1;
+    const e = [T, R, B, L].filter(k => k >= 0);
+    if (e.length === 2) addSeg(e[0], e[1]);
+    else if (e.length === 4) {
+      const cen = (f(i, j) + f(i + 1, j) + f(i + 1, j + 1) + f(i, j + 1)) / 4 > t;
+      if (cen === a) { addSeg(T, R); addSeg(B, L); } else { addSeg(T, L); addSeg(R, B); }
+    }
+  }
+  const used = new Uint8Array(segs.length), loops = [];
+  for (let s = 0; s < segs.length; s++) {
+    if (used[s]) continue; used[s] = 1;
+    const start = segs[s][0]; let cur = segs[s][1]; const loop = [pts.get(start)];
+    for (let guard = 0; cur !== start && guard < 1e6; guard++) {
+      loop.push(pts.get(cur));
+      let nx = -1; for (const id of adj.get(cur)) if (!used[id]) { nx = id; break; }
+      if (nx < 0) break;
+      used[nx] = 1; cur = segs[nx][0] === cur ? segs[nx][1] : segs[nx][0];
+    }
+    if (loop.length > 3) loops.push(loop);
+  }
+  return loops;
+}
+
+function chaikin(p, iter = 1, closed = true) {
+  for (let k = 0; k < iter; k++) {
+    const q = [], n = p.length;
+    for (let i = 0; i < (closed ? n : n - 1); i++) {
+      const a = p[i], b = p[(i + 1) % n];
+      q.push([a[0] * .75 + b[0] * .25, a[1] * .75 + b[1] * .25], [a[0] * .25 + b[0] * .75, a[1] * .25 + b[1] * .75]);
+    }
+    if (!closed) { q.unshift(p[0]); q.push(p[n - 1]); }
+    p = q;
+  }
+  return p;
+}
+function perim(l) { let s = 0; for (let i = 0; i < l.length; i++) s += dist(l[i], l[(i + 1) % l.length]); return s; }
+
+// distance (px) from every cell where mask==val to the nearest cell where it isn't
+function chamfer(mask, val) {
+  const d = new Float32Array(GN);
+  for (let k = 0; k < GN; k++) d[k] = mask[k] === val ? 1e6 : 0;
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const k = j * GW + i; if (!d[k]) continue; let v = d[k];
+    if (i > 0) v = Math.min(v, d[k - 1] + 1);
+    if (j > 0) { v = Math.min(v, d[k - GW] + 1); if (i > 0) v = Math.min(v, d[k - GW - 1] + 1.414); if (i < GW - 1) v = Math.min(v, d[k - GW + 1] + 1.414); }
+    d[k] = v;
+  }
+  for (let j = GH - 1; j >= 0; j--) for (let i = GW - 1; i >= 0; i--) {
+    const k = j * GW + i; if (!d[k]) continue; let v = d[k];
+    if (i < GW - 1) v = Math.min(v, d[k + 1] + 1);
+    if (j < GH - 1) { v = Math.min(v, d[k + GW] + 1); if (i < GW - 1) v = Math.min(v, d[k + GW + 1] + 1.414); if (i > 0) v = Math.min(v, d[k + GW - 1] + 1.414); }
+    d[k] = v;
+  }
+  for (let k = 0; k < GN; k++) d[k] *= CS;
+  return d;
+}
+
+function analyse() {
+  const land = new Uint8Array(GN); landCells = 0;
+  for (let k = 0; k < GN; k++) if (field[k] > 0) { land[k] = 1; landCells++; }
+  landDist = chamfer(land, 1); seaDist = chamfer(land, 0);
+  comp = new Int32Array(GN).fill(-1); compSize = []; compCells = [];
+  for (let k = 0; k < GN; k++) {
+    if (!land[k] || comp[k] >= 0) continue;
+    const id = compSize.length, st = [k], cells = []; comp[k] = id;
+    while (st.length) {
+      const c = st.pop(), i = c % GW; cells.push(c);
+      if (i > 0 && land[c - 1] && comp[c - 1] < 0) { comp[c - 1] = id; st.push(c - 1); }
+      if (i < GW - 1 && land[c + 1] && comp[c + 1] < 0) { comp[c + 1] = id; st.push(c + 1); }
+      if (c >= GW && land[c - GW] && comp[c - GW] < 0) { comp[c - GW] = id; st.push(c - GW); }
+      if (c + GW < GN && land[c + GW] && comp[c + GW] < 0) { comp[c + GW] = id; st.push(c + GW); }
+    }
+    compSize.push(cells.length); compCells.push(cells);
+  }
+  const lh = [], lm = [];
+  for (let k = 0; k < GN; k++) if (land[k]) { lh.push(field[k]); lm.push(mfield[k]); }
+  lh.sort((a, b) => a - b); lm.sort((a, b) => a - b);
+  const q = (arr, p) => arr.length ? arr[clamp(Math.floor(p * (arr.length - 1)), 0, arr.length - 1)] : 0;
+  PCT = { h: p => q(lh, p), m: p => q(lm, p) };
+}
+
+// ================= parchment & watercolour =================
+function paintParchment() {
+  const c = bctx; c.save(); c.clearRect(0, 0, W, H);
+  const m = 12, e = [], nz = (t, o) => Math.abs(nC.fbm(t * .008 + o * 3.1, o * 1.7, 4)) * 16 + rand(0, 1.4);
+  for (let x = m; x < W - m; x += 6) e.push([x, m + nz(x, 1)]);
+  for (let y = m; y < H - m; y += 6) e.push([W - m - nz(y, 2), y]);
+  for (let x = W - m; x > m; x -= 6) e.push([x, H - m - nz(x, 3)]);
+  for (let y = H - m; y > m; y -= 6) e.push([m + nz(y, 4), y]);
+  const path = new Path2D(); e.forEach(([x, y], i) => i ? path.lineTo(x, y) : path.moveTo(x, y)); path.closePath();
+  c.clip(path);
+  const g = c.createRadialGradient(W * .5, H * .46, 80, W * .5, H * .5, W * .6);
+  g.addColorStop(0, '#f4e7c6'); g.addColorStop(.55, '#ead7aa'); g.addColorStop(.85, '#dcc08a'); g.addColorStop(1, '#c4a066');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  for (let i = 0; i < 80; i++) {                                   // mottling
+    const x = rand(0, W), y = rand(0, H), r = rand(25, 230), a = rand(.015, .06), dk = rng() < .72;
+    const gg = c.createRadialGradient(x, y, 0, x, y, r);
+    gg.addColorStop(0, dk ? `rgba(140,98,45,${a})` : `rgba(255,251,235,${a * 1.5})`); gg.addColorStop(1, 'rgba(140,98,45,0)');
+    c.fillStyle = gg; c.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+  for (let i = 0; i < 2; i++) {                                    // cup rings
+    const x = rand(220, W - 220), y = rand(220, H - 220), r = rand(40, 75), a0 = rand(0, 6);
+    c.strokeStyle = `rgba(125,85,40,${rand(.05, .09)})`;
+    c.lineWidth = rand(2, 4); c.beginPath(); c.arc(x, y, r, a0, a0 + rand(3.5, 5.8)); c.stroke();
+    c.lineWidth = 1; c.beginPath(); c.arc(x + 1, y + 1, r - 3, a0 + .3, a0 + rand(2, 4)); c.stroke();
+  }
+  c.lineWidth = .6;                                                // fibres
+  for (let i = 0; i < 1100; i++) {
+    const x = rand(0, W), y = rand(0, H), a = rand(0, Math.PI), l = rand(2, 12);
+    c.strokeStyle = `rgba(105,75,38,${rand(.03, .09)})`;
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); c.stroke();
+  }
+  const t = document.createElement('canvas'); t.width = t.height = 192;   // grain
+  const tc = t.getContext('2d'), id = tc.createImageData(192, 192);
+  for (let i = 0; i < id.data.length; i += 4) { const v = 205 + rng() * 50; id.data[i] = v; id.data[i + 1] = v * .97; id.data[i + 2] = v * .9; id.data[i + 3] = 255; }
+  tc.putImageData(id, 0, 0);
+  c.globalCompositeOperation = 'multiply'; c.globalAlpha = .32;
+  c.fillStyle = c.createPattern(t, 'repeat'); c.fillRect(0, 0, W, H); c.globalAlpha = 1;
+  const side = (x0, y0, x1, y1, rect) => {
+    const lg = c.createLinearGradient(x0, y0, x1, y1);
+    lg.addColorStop(0, 'rgba(110,65,25,.55)'); lg.addColorStop(.35, 'rgba(140,90,40,.18)'); lg.addColorStop(1, 'rgba(140,90,40,0)');
+    c.fillStyle = lg; c.fillRect(...rect);
+  };
+  side(0, 0, 0, 70, [0, 0, W, 70]); side(0, H, 0, H - 70, [0, H - 70, W, 70]);
+  side(0, 0, 70, 0, [0, 0, 70, H]); side(W, 0, W - 70, 0, [W - 70, 0, 70, H]);
+  c.globalCompositeOperation = 'source-over';
+  c.lineWidth = 2.5; c.strokeStyle = 'rgba(95,55,20,.55)'; c.stroke(path);
+  const cx = W / 2 + rand(-40, 40), cy = H / 2 + rand(-30, 30), dx = rand(-6, 6), dy = rand(-5, 5);   // folds
+  c.lineWidth = 6; c.strokeStyle = 'rgba(110,75,35,.07)';
+  c.beginPath(); c.moveTo(cx + 3.5, 0); c.lineTo(cx + 3.5 + dx, H); c.moveTo(0, cy + 3.5); c.lineTo(W, cy + 3.5 + dy); c.stroke();
+  c.lineWidth = 1.4; c.strokeStyle = 'rgba(255,250,232,.3)';
+  c.beginPath(); c.moveTo(cx, 0); c.lineTo(cx + dx, H); c.moveTo(0, cy); c.lineTo(W, cy + dy); c.stroke();
+  c.restore();
+}
+
+function paintWash() {
+  const sc = document.createElement('canvas'); sc.width = GW; sc.height = GH;
+  const sx = sc.getContext('2d'), img = sx.createImageData(GW, GH), D = img.data;
+  const hMax = PCT.h(.98), mHi = PCT.m(.85);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const k = j * GW + i, h = field[k], o = k * 4, mott = .75 + .5 * (nD.n2(i * .09, j * .09) * .5 + .5);
+    let r, g, b, a;
+    if (h > 0) {
+      const t = clamp(h / hMax, 0, 1);
+      r = lerp(150, 172, t); g = lerp(166, 128, t); b = lerp(96, 80, t);
+      a = (.3 + .14 * Math.max(0, 1 - landDist[k] / 12)) * mott;   // pigment pools at the coast
+      if (mfield[k] > mHi) { r -= 22; g -= 28; b -= 16; }
+    } else {
+      r = 92; g = 134; b = 146; a = Math.max(0, .34 + h * 1.5) * mott + .04;
+    }
+    D[o] = r; D[o + 1] = g; D[o + 2] = b; D[o + 3] = clamp(a, 0, 1) * 255;
+  }
+  sx.putImageData(img, 0, 0);
+  wctx.clearRect(0, 0, W, H); wctx.save();
+  wctx.beginPath(); wctx.rect(24, 24, W - 48, H - 48); wctx.clip();
+  wctx.imageSmoothingEnabled = true; wctx.imageSmoothingQuality = 'high';
+  wctx.drawImage(sc, -CS / 2, -CS / 2, GW * CS, GH * CS);
+  wctx.restore();
+}
+
+// ================= occupancy (keeps glyphs and labels apart) =================
+const OC = 8, OW = W / OC, OH = H / OC, occ = new Uint8Array(OW * OH);
+const B_TEXT = 1, B_GLYPH = 2, B_LINE = 4, B_TERR = 8, B_CITY = 16, B_TREE = 32, B_ALL = 63;
+function occMark(x0, y0, x1, y1, bit) {
+  const i0 = clamp(Math.floor(x0 / OC), 0, OW - 1), i1 = clamp(Math.floor(x1 / OC), 0, OW - 1);
+  const j0 = clamp(Math.floor(y0 / OC), 0, OH - 1), j1 = clamp(Math.floor(y1 / OC), 0, OH - 1);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) occ[j * OW + i] |= bit;
+}
+function occFree(x0, y0, x1, y1, mask) {
+  if (x0 < FR.x0 + 6 || y0 < FR.y0 + 6 || x1 > FR.x1 - 6 || y1 > FR.y1 - 6) return false;
+  const i0 = Math.floor(x0 / OC), i1 = Math.floor(x1 / OC), j0 = Math.floor(y0 / OC), j1 = Math.floor(y1 / OC);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (occ[j * OW + i] & mask) return false;
+  return true;
+}
+const occAt = (x, y) => occ[clamp(Math.floor(y / OC), 0, OH - 1) * OW + clamp(Math.floor(x / OC), 0, OW - 1)];
+function boxOn(b, test) {
+  for (let y = b[1]; y <= b[3]; y += 8) for (let x = b[0]; x <= b[2]; x += 8) if (!test(hAt(x, y))) return false;
+  return test(hAt(b[2], b[3]));
+}
+
+// ================= drawing operations =================
+// Every mark on the map is an "op": a stroke (polyline drawn by the nib) or a text (written left to right).
+let P = {}, G = 0, ops = [];
+const INK = '#2a1b0e', INK2 = '#3e2b19', SEPIA = '#6b5333', FAINT = '#b49a70', SEA = '#2e4850', RED = '#7b2618', GREEN = '#2f3a1c';
+function S(ph, pts, o) {
+  if (!pts || pts.length < 2) return null;
+  const op = Object.assign({ type: 'stroke', pts, w: 1.3, color: INK, speed: 650, g: G }, o);
+  (P[ph] || (P[ph] = [])).push(op); return op;
+}
+const fontStr = o => `${o.italic ? 'italic ' : ''}${o.size}px ${o.sc ? '"IM Fell English SC"' : '"IM Fell English"'}, Georgia, serif`;
+function measure(text, o) {
+  ictx.font = fontStr(o);
+  if (!o.spacing) return ictx.measureText(text).width;
+  let w = 0; for (const ch of text) w += ictx.measureText(ch).width + o.spacing;
+  return w - o.spacing;
+}
+const TDEF = { size: 16, italic: true, sc: false, spacing: 0, align: 'center', color: INK, speed: 230 };
+function textBox(text, x, y, o) {
+  o = Object.assign({}, TDEF, o);
+  const w = measure(text, o), x0 = o.align === 'center' ? x - w / 2 : o.align === 'left' ? x : x - w;
+  return [x0 - 4, y - o.size * .8, x0 + w + 4, y + o.size * .3];
+}
+function T(ph, text, x, y, o = {}) {
+  o = Object.assign({}, TDEF, o);
+  const w = measure(text, o), x0 = o.align === 'center' ? x - w / 2 : o.align === 'left' ? x : x - w;
+  const op = Object.assign({ type: 'text', text, y, x0, width: w, g: G, font: fontStr(o) }, o);
+  if (o.spacing) {
+    ictx.font = op.font; let cx = x0; op.chars = [];
+    for (const ch of text) { op.chars.push([ch, cx]); cx += ictx.measureText(ch).width + o.spacing; }
+  }
+  (P[ph] || (P[ph] = [])).push(op);
+  occMark(x0 - 4, y - o.size * .8, x0 + w + 4, y + o.size * .3, B_TEXT);
+  return op;
+}
+const opStart = op => op.type === 'text' ? [op.x0, op.y] : op.pts[0];
+const opEnd = op => op.type === 'text' ? [op.x0 + op.width, op.y] : op.pts[op.pts.length - 1];
+// greedy nearest-neighbour ordering of op groups so the quill doesn't zig-zag across the sheet
+function nnOrder(ph) {
+  const list = P[ph]; if (!list || list.length < 2) return;
+  const groups = new Map();
+  for (const op of list) { if (!groups.has(op.g)) groups.set(op.g, []); groups.get(op.g).push(op); }
+  const gs = [...groups.values()], out = [];
+  let pos = opStart(gs[0][0]);
+  while (gs.length) {
+    let bi = 0, bd = 1e9;
+    gs.forEach((g, i) => { const d = dist(opStart(g[0]), pos); if (d < bd) { bd = d; bi = i; } });
+    const g = gs.splice(bi, 1)[0]; out.push(...g); pos = opEnd(g[g.length - 1]);
+  }
+  P[ph] = out;
+}
+
+// ================= geometry helpers =================
+function circlePts(cx, cy, r, a0 = 0, n = 0) {
+  n = n || Math.max(12, Math.round(r * 1.2)); const p = [];
+  for (let i = 0; i <= n; i++) { const a = a0 + i / n * Math.PI * 2; p.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+  return p;
+}
+function wob(pts, amp = .5, step = 14) {          // densify a polyline with a slight hand tremor
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], d = dist(a, b) || 1, n = Math.max(1, Math.round(d / step));
+    const nx = -(b[1] - a[1]) / d, ny = (b[0] - a[0]) / d;
+    for (let k = 0; k < n; k++) {
+      const t = k / n, o = k ? nC.n2(a[0] * .013 + t * d * .02, a[1] * .013 + i) * amp : 0;
+      out.push([a[0] + (b[0] - a[0]) * t + nx * o, a[1] + (b[1] - a[1]) * t + ny * o]);
+    }
+  }
+  out.push(pts[pts.length - 1]); return out;
+}
+function zigzag(A, B, C, n) {                      // quick hatching inside triangle A-B-C (A = apex)
+  const p = []; for (let k = 0; k <= n; k++) { const t = (k + .5) / (n + 1); p.push(k % 2 ? L2(A, C, t) : L2(A, B, t)); } return p;
+}
+
+// ================= cartouche, frame, compass, scale =================
+function border() {
+  G++;
+  const r = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
+  S('border', wob(r(44, 44, 1556, 956), .6, 30), { w: 2.4, speed: 2600 });
+  S('border', wob(r(56, 56, 1544, 944), .4, 30), { w: 1.1, speed: 2600 });
+  S('border', r(50, 50, 1550, 950), { w: 9, dash: [50, 50], flat: true, cap: 'butt', speed: 3000 });
+}
+
+function compassRose(cx, cy, R) {
+  G++;
+  S('compass', circlePts(cx, cy, R, -Math.PI / 2), { w: 1.4, speed: 600 });
+  S('compass', circlePts(cx, cy, R * .86, -Math.PI / 2), { w: .8, speed: 700 });
+  const tk = [], rin = R * .86;
+  for (let k = 0; k <= 32; k++) {
+    const a = -Math.PI / 2 + k / 32 * Math.PI * 2, rout = k % 4 === 0 ? R : R * .93;
+    tk.push([cx + Math.cos(a) * rin, cy + Math.sin(a) * rin], [cx + Math.cos(a) * rout, cy + Math.sin(a) * rout], [cx + Math.cos(a) * rin, cy + Math.sin(a) * rin]);
+    if (k < 32) for (let s = 1; s < 4; s++) { const b = a + s / 4 * Math.PI / 16; tk.push([cx + Math.cos(b) * rin, cy + Math.sin(b) * rin]); }
+  }
+  S('compass', tk, { w: .7, speed: 1100 });
+  const star = (L, r0, off, n) => {
+    for (let k = 0; k < 4; k++) {
+      const a = -Math.PI / 2 + off + k * Math.PI / 2, c = [cx, cy];
+      const tip = [cx + Math.cos(a) * L, cy + Math.sin(a) * L];
+      const s1 = [cx + Math.cos(a - Math.PI / 4) * r0, cy + Math.sin(a - Math.PI / 4) * r0];
+      const s2 = [cx + Math.cos(a + Math.PI / 4) * r0, cy + Math.sin(a + Math.PI / 4) * r0];
+      S('compass', [c, s1, tip, s2, c, tip], { w: 1, speed: 520, erase: [c, s1, tip, s2] });
+      S('compass', zigzag(tip, c, s1, n), { w: .7, speed: 1000 });
+    }
+  };
+  star(R * .62, R * .13, Math.PI / 4, 6);
+  star(R * 1.12, R * .2, 0, 11);
+  S('compass', circlePts(cx, cy, 2, 0, 10), { w: 2.4, speed: 200 });
+  T('compass', 'N', cx, cy - R * 1.12 - 8, { sc: true, italic: false, size: 24, speed: 110 });
+  occMark(cx - R - 10, cy - R - 40, cx + R + 10, cy + R + 10, B_GLYPH);
+}
+
+function titleBanner(cx, cy, text) {
+  G++;
+  const o = { sc: true, italic: false, size: 38 };
+  const tw = measure(text, Object.assign({}, TDEF, o)), bw = tw + 100, bh = 56;
+  const x0 = cx - bw / 2, x1 = cx + bw / 2, y0 = cy - bh / 2, y1 = cy + bh / 2, off = 16, tail = 64;
+  for (const side of [-1, 1]) {
+    const xe = side < 0 ? x0 : x1;
+    S('title', [[xe, y0 + off], [xe + side * tail, y0 + off], [xe + side * (tail - 18), cy + off], [xe + side * tail, y1 + off], [xe, y1 + off], [xe, y1]], { w: 1.3, speed: 650 });
+    S('title', zigzag([xe, y1], [xe, y1 + off], [xe + side * 14, y1 + off], 4), { w: .7, speed: 700 });
+  }
+  const edge = (y, dir) => {
+    const p = []; for (let i = 0; i <= 24; i++) { const t = i / 24; p.push([lerp(x0, x1, t), y - 5 * Math.sin(Math.PI * t)]); }
+    return dir < 0 ? p.reverse() : p;
+  };
+  const band = [...edge(y0, 1), ...edge(y1, -1), [x0, y0]];
+  S('title', band, { w: 1.5, speed: 650, erase: band });
+  S('title', edge(y0 + 5, 1).slice(2, -2), { w: .6, speed: 900 });
+  S('title', edge(y1 - 5, -1).slice(2, -2), { w: .6, speed: 900 });
+  T('title', text, cx, cy + 10, Object.assign({ speed: 170 }, o));
+  occMark(x0 - tail - 10, y0 - 10, x1 + tail + 10, y1 + off + 10, B_GLYPH);
+}
+
+function scaleBar(x0, y) {
+  G++;
+  const L = 200, n = 4, s = L / n, h = 7;
+  S('scale', [[x0, y], [x0 + L, y], [x0 + L, y + h], [x0, y + h], [x0, y]], { w: 1.1, speed: 500 });
+  for (let k = 1; k < n; k++) S('scale', [[x0 + k * s, y], [x0 + k * s, y + h]], { w: .9, speed: 300 });
+  for (let k = 0; k < n; k += 2) S('scale', [[x0 + k * s, y + h / 2], [x0 + (k + 1) * s, y + h / 2]], { w: h - 1.4, cap: 'butt', flat: true, speed: 300 });
+  ['0', '100', '200'].forEach((t, k) => T('scale', t, x0 + k * 2 * s, y - 6, { size: 13 }));
+  T('scale', 'Leagues', x0 + L / 2, y + h + 18, { size: 15 });
+  occMark(x0 - 10, y - 20, x0 + L + 10, y + h + 22, B_GLYPH);
+}
+
+function signature() {
+  G++;
+  T('sig', `Drawn by the Royal Cartographer · in the Year ${randi(312, 1288)} of the ${pick(['Second', 'Third', 'Fourth', 'Last'])} Age`, 800, 936, { size: 13, color: SEPIA, speed: 320 });
+}
+
+// ================= coasts & labels =================
+function coasts() {
+  const loops = contours(0).map(l => chaikin(l, 2)).filter(l => perim(l) > 22);
+  loops.sort((a, b) => perim(b) - perim(a));
+  let pos = [W / 2, H / 2], cur = loops.shift();
+  while (cur) {
+    let bi = 0, bd = 1e9;
+    cur.forEach((p, i) => { const d = dist(p, pos); if (d < bd) { bd = d; bi = i; } });
+    const r = cur.slice(bi).concat(cur.slice(0, bi + 1));
+    G++; S('coast', r, { w: 1.7, speed: 760 }); pos = r[r.length - 1];
+    let ni = -1, nd = 1e9;
+    loops.forEach((l, i) => { for (let k = 0; k < l.length; k += 4) { const d = dist(l[k], pos); if (d < nd) { nd = d; ni = i; } } });
+    cur = ni >= 0 ? loops.splice(ni, 1)[0] : null;
+  }
+}
+
+function shallows() {
+  for (const [t, col, w, dash, sp] of [[-.06, SEPIA, .75, null, 2600], [-.13, FAINT, .7, [4, 4], 3000]]) {
+    for (const l of contours(t).map(l => chaikin(l, 2)).filter(l => perim(l) > 60)) { G++; S('shallow', l.concat([l[0]]), { w, color: col, dash, speed: sp }); }
+  }
+  nnOrder('shallow');
+}
+
+let regions = [];
+function regionLabels() {
+  regions = [];
+  const order = compSize.map((n, i) => i).filter(i => compSize[i] > 700).sort((a, b) => compSize[b] - compSize[a]).slice(0, 4);
+  for (const ci of order) {
+    const cells = compCells[ci].slice().sort((a, b) => landDist[b] - landDist[a]);
+    const want = clamp(Math.floor(compSize[ci] / 2600), 1, 3);           // big continents hold several realms
+    for (let n = 0; n < want; n++) {
+      const name = uniqueName().toUpperCase();
+      let size = clamp(15 + Math.sqrt(compSize[ci] / want) * .32, 18, 32), placed = false;
+      for (let attempt = 0; attempt < 4 && !placed; attempt++, size *= .85) {
+        const o = { sc: true, italic: false, size, spacing: size * .5, color: INK2, speed: 190 };
+        for (let c = 0; c < cells.length && c < 2400; c += 3) {
+          const k = cells[c], x = (k % GW) * CS, y = ((k / GW) | 0) * CS + size * .35;
+          if (regions.some(r => r.ci === ci && Math.hypot(r.x - x, r.y - y) < 360)) continue;
+          const bx = textBox(name, x, y, o);
+          if (!occFree(...bx, B_ALL) || !boxOn([bx[0] - 12, bx[1] - 6, bx[2] + 12, bx[3] + 6], v => v > .03)) continue;
+          G++; T('region', name, x, y, o); regions.push({ x, y, ci, name }); placed = true; break;
+        }
+      }
+      if (!placed) usedNames.delete(name);
+    }
+  }
+  nnOrder('region');
+}
+
+function seaLabels() {
+  const cand = [];
+  for (let j = 4; j < GH - 4; j += 3) for (let i = 4; i < GW - 4; i += 3) {
+    const k = j * GW + i; if (field[k] > -.05) continue;
+    const x = i * CS, y = j * CS, fd = Math.min(x - FR.x0, FR.x1 - x, y - FR.y0, FR.y1 - y);
+    cand.push({ x, y, d: Math.min(seaDist[k], fd) + rand(0, 30) });
+  }
+  cand.sort((a, b) => b.d - a.d);
+  const placed = [], n = randi(2, 3);
+  for (const c of cand) {
+    if (placed.length >= n) break;
+    if (placed.some(p => Math.hypot(p.x - c.x, p.y - c.y) < 380)) continue;
+    const name = seaName(), o = { size: 22, spacing: 1.5, color: SEA, speed: 200 };
+    const bx = textBox(name, c.x, c.y, o);
+    if (!occFree(...bx, B_ALL) || !boxOn(bx, v => v < -.16)) { usedNames.delete(name); continue; }
+    G++; T('sealabel', name, c.x, c.y, o); placed.push(c);
+  }
+  nnOrder('sealabel');
+}
+
+// ================= rivers (priority-flood drainage) =================
+function floodParents() {
+  const par = new Int32Array(GN).fill(-1), seen = new Uint8Array(GN), heap = [];
+  const push = (l, i) => {
+    heap.push([l, i]); let c = heap.length - 1;
+    while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; }
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last; let c = 0;
+      for (;;) {
+        const l = 2 * c + 1, r = l + 1; let m = c;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m;
+      }
+    }
+    return top;
+  };
+  for (let k = 0; k < GN; k++) if (field[k] <= 0) seen[k] = 1;
+  for (let k = 0; k < GN; k++) {
+    if (field[k] > 0) continue; const i = k % GW;
+    if ((i > 0 && field[k - 1] > 0) || (i < GW - 1 && field[k + 1] > 0) || (k >= GW && field[k - GW] > 0) || (k + GW < GN && field[k + GW] > 0)) push(field[k], k);
+  }
+  while (heap.length) {
+    const [lv, k] = pop(), i = k % GW, j = (k / GW) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const ni = i + di, nj = j + dj; if ((!di && !dj) || ni < 0 || nj < 0 || ni >= GW || nj >= GH) continue;
+      const n = nj * GW + ni; if (seen[n]) continue;
+      seen[n] = 1; par[n] = k; push(Math.max(field[n], lv), n);
+    }
+  }
+  return par;
+}
+
+let rivers = [];
+function makeRivers() {
+  const par = floodParents(), riverCells = new Uint8Array(GN), mT = PCT.m(.86), src = [], used = [];
+  rivers = [];
+  for (let j = 2; j < GH - 2; j += 2) for (let i = 2; i < GW - 2; i += 2) { const k = j * GW + i; if (field[k] > .02 && mfield[k] > mT) src.push(k); }
+  shuffle(src);
+  for (const s of src) {
+    if (rivers.length >= 6) break;
+    const sx = (s % GW) * CS, sy = ((s / GW) | 0) * CS;
+    if (used.some(u => Math.hypot(u[0] - sx, u[1] - sy) < 150)) continue;
+    const cells = []; let k = s, joined = false;
+    for (let g = 0; k >= 0 && field[k] > 0 && g < 3000; g++) { cells.push(k); if (riverCells[k]) { joined = true; break; } k = par[k]; }
+    if (k >= 0 && !joined) cells.push(k);
+    if (cells.length < 26) continue;
+    let pts = chaikin(cells.map(c => [(c % GW) * CS, ((c / GW) | 0) * CS]), 3, false);
+    // meander
+    let acc = 0; const len = (() => { let s2 = 0; for (let i = 1; i < pts.length; i++) s2 += dist(pts[i], pts[i - 1]); return s2; })(), seed = rand(0, 99);
+    pts = pts.map((p, i) => {
+      if (i) acc += dist(p, pts[i - 1]);
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], d = dist(a, b) || 1;
+      const o = nC.n2(acc * .03, seed) * 6 * Math.min(1, acc / 30, (len - acc) / 30);
+      return [p[0] - (b[1] - a[1]) / d * o, p[1] + (b[0] - a[0]) / d * o];
+    });
+    let cut = pts.length;
+    for (let i = 4; i < pts.length; i++) if (hAt(pts[i][0], pts[i][1]) < -.005) { cut = i + 1; break; }
+    pts = pts.slice(0, cut);
+    if (joined) {
+      let best = null, bd = 1e9;
+      for (const r of rivers) for (const q of r.pts) { const d = dist(q, pts[pts.length - 1]); if (d < bd) { bd = d; best = q; } }
+      if (best) pts.push(best);
+    }
+    if (pts.some(p => occAt(p[0], p[1]) & (B_TEXT | B_GLYPH))) continue;
+    for (const c of cells) for (const n of [c, c - 1, c + 1, c - GW, c + GW]) if (n >= 0 && n < GN) riverCells[n] = 1;
+    used.push([sx, sy]);
+    rivers.push({ pts });
+    for (const p of pts) occMark(p[0] - 5, p[1] - 5, p[0] + 5, p[1] + 5, B_LINE);
+    const tw = joined ? 1.3 : 2.1;
+    G++; S('river', pts, { w: 1, wf: t => .55 + t * (tw - .55), color: INK2, speed: 420 });
+  }
+  nnOrder('river');
+}
+
+// ================= cities & roads =================
+let cities = [];
+function makeCities() {
+  cities = [];
+  const hT = PCT.m(.7), cand = [];
+  for (let j = 3; j < GH - 3; j += 2) for (let i = 3; i < GW - 3; i += 2) {
+    const k = j * GW + i; if (field[k] <= .015 || mfield[k] > hT || landDist[k] < 8) continue;
+    const x = i * CS + rand(-2, 2), y = j * CS + rand(-2, 2);
+    if (!occFree(x - 10, y - 26, x + 10, y + 8, B_TEXT | B_GLYPH | B_LINE)) continue;
+    const coast = landDist[k] < 26, river = !occFree(x - 20, y - 20, x + 20, y + 20, B_LINE);
+    cand.push({ x, y, k, ci: comp[k], coast, s: rng() + (coast ? .7 : 0) + (river ? .9 : 0) });
+  }
+  cand.sort((a, b) => b.s - a.s);
+  const target = clamp(Math.round(landCells / 1400), 6, 11);
+  const far = (c, d) => !cities.some(q => Math.hypot(q.x - c.x, q.y - c.y) < d);
+  for (const r of regions) {
+    const c = cand.find(c => c.ci === r.ci && far(c, 140) && Math.hypot(c.x - r.x, c.y - r.y) > 70);
+    if (c) { c.cap = true; cities.push(c); }
+  }
+  for (const c of cand) { if (cities.length >= target) break; if (!cities.includes(c) && far(c, 130)) cities.push(c); }
+  for (const c of cities) occMark(c.x - 9, c.y - (c.cap ? 24 : 8), c.x + 9, c.y + 8, B_CITY);
+  for (const c of cities) {
+    G++;
+    c.name = c.cap ? uniqueName() : (c.coast && rng() < .35 ? 'Port ' : '') + uniqueName();
+    const { x, y } = c;
+    if (c.cap) {
+      const s = [[-11, 6], [-11, -10], [-9, -10], [-9, -8], [-7, -8], [-7, -10], [-5, -10], [-5, -4], [-4, -4], [-4, -16], [-1.5, -16], [-1.5, -14], [1.5, -14], [1.5, -16], [4, -16], [4, -4], [5, -4], [5, -10], [7, -10], [7, -8], [9, -8], [9, -10], [11, -10], [11, 6], [-11, 6]].map(([a, b]) => [x + a, y + b]);
+      S('city', s, { w: 1.1, speed: 320, erase: s });
+      S('city', [[x, y - 16], [x, y - 25], [x + 7, y - 22.5], [x, y - 20]], { w: .9, color: RED, speed: 260 });
+      S('city', [[x - 2.2, y + 6], [x - 2.2, y + 1.5], [x, y - .5], [x + 2.2, y + 1.5], [x + 2.2, y + 6]], { w: .9, speed: 260 });
+    } else {
+      S('city', circlePts(x, y, 4.2, -Math.PI / 2, 14), { w: 1.2, speed: 260, erase: circlePts(x, y, 5.2, 0, 12) });
+      S('city', circlePts(x, y, 1.3, 0, 8), { w: 2.2, speed: 200 });
+    }
+    const o = c.cap ? { sc: true, italic: false, size: 17, color: RED, speed: 200 } : { size: 15, speed: 230 };
+    const up = c.cap ? 30 : 12, side = c.cap ? 18 : 13;
+    for (const [lx, ly, align] of [[x + side, y + 5, 'left'], [x - side, y + 5, 'right'], [x, y - up, 'center'], [x, y + 22, 'center']]) {
+      const oo = Object.assign({ align }, o), bx = textBox(c.name, lx, ly, oo);
+      if (!occFree(...bx, B_TEXT | B_GLYPH)) continue;
+      if (cities.some(q => q !== c && q.x > bx[0] - 12 && q.x < bx[2] + 12 && q.y > bx[1] - 12 && q.y < bx[3] + 26)) continue;
+      T('city', c.name, lx, ly, oo); break;
+    }
+  }
+  nnOrder('city');
+}
+
+function roadPath(a, b) {
+  const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 6), nx = -(b.y - a.y) / d, ny = (b.x - a.x) / d;
+  const sd = rand(0, 100), bend = rand(-.12, .12) * d, mMax = PCT.m(.9), pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, o = Math.sin(Math.PI * t) * (bend + nC.n2(t * 3 + sd, sd) * 14);
+    pts.push([lerp(a.x, b.x, t) + nx * o, lerp(a.y, b.y, t) + ny * o]);
+  }
+  const tr = pts.filter(p => Math.hypot(p[0] - a.x, p[1] - a.y) > 11 && Math.hypot(p[0] - b.x, p[1] - b.y) > 11);
+  for (const p of tr) if (hAt(p[0], p[1]) < .01 || (occAt(p[0], p[1]) & B_TEXT) || mAt(p[0], p[1]) > mMax) return null;
+  for (const c of cities) if (c !== a && c !== b && tr.some(p => Math.hypot(p[0] - c.x, p[1] - c.y) < 14)) return null;
+  return tr.length > 3 ? tr : null;
+}
+function makeRoads() {
+  const pairs = new Set();
+  for (const a of cities) {
+    const near = cities.filter(b => b !== a && b.ci === a.ci).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y)).slice(0, 2);
+    for (const b of near) {
+      if (Math.hypot(b.x - a.x, b.y - a.y) > 420) continue;
+      const key = [cities.indexOf(a), cities.indexOf(b)].sort().join();
+      if (pairs.has(key)) continue;
+      const pts = roadPath(a, b); if (!pts) continue;
+      pairs.add(key); G++;
+      S('road', pts, { w: .9, color: SEPIA, dash: [5, 4.5], speed: 560 });
+      for (const p of pts) occMark(p[0] - 4, p[1] - 4, p[0] + 4, p[1] + 4, B_LINE);
+    }
+  }
+  nnOrder('road');
+}
+
+// ================= terrain glyphs =================
+// cluster nearby glyphs, then sweep each cluster row by row (back to front, so nearer glyphs overlap farther ones)
+function orderGlyphs(list, link) {
+  const n = list.length, cid = new Int32Array(n).fill(-1), groups = [];
+  for (let i = 0; i < n; i++) {
+    if (cid[i] >= 0) continue;
+    const g = [], st = [i]; cid[i] = groups.length;
+    while (st.length) {
+      const a = st.pop(); g.push(list[a]);
+      for (let j = 0; j < n; j++) if (cid[j] < 0 && Math.abs(list[j].x - list[a].x) < link && Math.abs(list[j].y - list[a].y) < link) { cid[j] = groups.length; st.push(j); }
+    }
+    groups.push(g);
+  }
+  for (const g of groups) g.sort((a, b) => a.row - b.row || (a.row % 2 ? b.x - a.x : a.x - b.x));
+  const out = []; let pos = [0, 0];
+  while (groups.length) {
+    let bi = 0, bd = 1e9;
+    groups.forEach((g, i) => { const d = Math.hypot(g[0].x - pos[0], g[0].y - pos[1]); if (d < bd) { bd = d; bi = i; } });
+    const g = groups.splice(bi, 1)[0]; out.push(...g); const l = g[g.length - 1]; pos = [l.x, l.y];
+  }
+  return out;
+}
+
+function mountainGlyph(x, y, s) {
+  const w = (10 + rand(0, 3)) * s, h = (15 + rand(0, 5)) * s, px = x + rand(-.25, .25) * w;
+  const L = [x - w, y], Pk = [px, y - h], R = [x + w, y];
+  const sh = L2(Pk, R, rand(.35, .55)); sh[0] += rand(-1, 1.5) * s; sh[1] += rand(-1, 2) * s;
+  const ls = L2(L, Pk, .5); ls[0] += rand(-1, 1) * s;
+  S('mount', [L, ls, Pk, sh, R], { w: 1.25, speed: 1300, erase: [[L[0] - 1, y + 1.5], Pk, [R[0] + 1, y + 1.5]] });
+  const n = Math.round(3 + s * 2), hp = [];
+  for (let k = 1; k <= n; k++) {
+    const t = k / (n + 1), a = t < .5 ? L2(Pk, sh, t * 2) : L2(sh, R, (t - .5) * 2), len = (y - a[1]) * .75;
+    hp.push(a, [a[0] - len * .55, a[1] + len]);
+  }
+  S('mount', hp, { w: .7, speed: 1700 });
+}
+function makeMountains() {
+  const mT = PCT.m(.85), mMax = PCT.m(.995), cand = []; let row = 0;
+  for (let y = FR.y0 + 20; y < FR.y1 - 10; y += 20, row++) for (let x = FR.x0 + 20 + (row % 2) * 12; x < FR.x1 - 20; x += 24) {
+    const px = x + rand(-5, 5), py = y + rand(-1.5, 1.5), m = mAt(px, py);
+    if (m < mT || hAt(px, py) < .05) continue;
+    const s = .75 + .75 * clamp((m - mT) / (mMax - mT), 0, 1) + rand(-.1, .1);
+    if (hAt(px - 11 * s, py) < .02 || hAt(px + 11 * s, py) < .02) continue;
+    if (!occFree(px - 11 * s, py - 17 * s, px + 11 * s, py + 2, B_TEXT | B_GLYPH | B_LINE | B_CITY)) continue;
+    cand.push({ x: px, y: py, s, m, row });
+  }
+  cand.sort((a, b) => b.m - a.m); cand.splice(95);
+  for (const m of cand) occMark(m.x - 9 * m.s, m.y - 14 * m.s, m.x + 9 * m.s, m.y, B_TERR);
+  for (const m of orderGlyphs(cand, 48)) { G++; mountainGlyph(m.x, m.y, m.s); }
+}
+
+function makeHills() {
+  const lo = PCT.m(.68), hi = PCT.m(.85), cand = []; let row = 0;
+  for (let y = FR.y0 + 20; y < FR.y1 - 10; y += 22, row++) for (let x = FR.x0 + 20 + (row % 2) * 15; x < FR.x1 - 20; x += 30) {
+    const px = x + rand(-6, 6), py = y + rand(-1.5, 1.5), m = mAt(px, py);
+    if (m < lo || m > hi || hAt(px, py) < .05 || nD.n2(px * .01, py * .01) < .05) continue;
+    cand.push({ x: px, y: py, s: rand(.8, 1.1), row });
+  }
+  shuffle(cand); const list = [];
+  for (const h of cand) {
+    if (list.length >= 45) break;
+    if (!occFree(h.x - 10, h.y - 7, h.x + 10, h.y + 2, B_ALL)) continue;
+    occMark(h.x - 9, h.y - 6, h.x + 9, h.y, B_TERR); list.push(h);
+  }
+  for (const h of orderGlyphs(list, 50)) {
+    G++;
+    const w = 9 * h.s, hh = 6 * h.s, arc = [];
+    for (let i = 0; i <= 10; i++) { const a = Math.PI * (1 - i / 10); arc.push([h.x + Math.cos(a) * w, h.y - Math.sin(a) * hh]); }
+    S('hill', arc, { w: 1.05, speed: 1100, erase: arc });
+    S('hill', [[h.x + w * .25, h.y - hh * .55], [h.x + w * .05, h.y - 1], [h.x + w * .6, h.y - hh * .35], [h.x + w * .45, h.y - .5]], { w: .65, speed: 1400 });
+  }
+}
+
+function treeGlyph(t) {
+  const { x, y } = t;
+  if (t.con) {
+    const p = [[x, y + 1], [x, y - 2.5], [x - 4.6, y - 2.5], [x - 1.6, y - 7.5], [x - 3.4, y - 7.5], [x, y - 14], [x + 3.4, y - 7.5], [x + 1.6, y - 7.5], [x + 4.6, y - 2.5], [x, y - 2.5]];
+    S('forest', p, { w: .95, speed: 1400, color: GREEN, erase: [[x - 5.6, y - 1.5], [x, y - 15.5], [x + 5.6, y - 1.5]] });
+  } else {
+    const r = 4.3 + rand(-.4, .6), cy = y - 3 - r, ph = rand(0, 6), p = [[x, y + 1], [x, y - 3]];
+    for (let i = 0; i <= 22; i++) { const a = Math.PI / 2 + i / 22 * Math.PI * 2, rr = r * (1 + .13 * Math.sin(a * 5 + ph)); p.push([x + Math.cos(a) * rr, cy + Math.sin(a) * rr]); }
+    S('forest', p, { w: .95, speed: 1400, color: GREEN, erase: circlePts(x, cy, r + 1.2, 0, 12) });
+  }
+}
+function makeForests() {
+  const lo = PCT.m(.06), hi = PCT.m(.8), conT = PCT.m(.55), cand = []; let row = 0;
+  for (let y = FR.y0 + 14; y < FR.y1 - 6; y += 10, row++) for (let x = FR.x0 + 14 + (row % 2) * 6; x < FR.x1 - 14; x += 12) {
+    const px = x + rand(-3, 3), py = y + rand(-1.2, 1.2), h = hAt(px, py), m = mAt(px, py);
+    if (h < .03 || m < lo || m > hi) continue;
+    const f = nD.fbm(px * .007 + 40, py * .007, 3) + rand(-.04, .04); if (f < .05) continue;
+    cand.push({ x: px, y: py, f, row, con: m > conT });
+  }
+  cand.sort((a, b) => b.f - a.f);
+  const list = [];
+  for (const c of cand) {
+    if (list.length >= 200) break;
+    if (!occFree(c.x - 4, c.y - 12, c.x + 4, c.y + 1, B_TEXT | B_GLYPH | B_LINE | B_CITY | B_TERR)) continue;
+    list.push(c);
+  }
+  for (const c of list) occMark(c.x - 4, c.y - 12, c.x + 4, c.y + 1, B_TREE);
+  for (const t of orderGlyphs(list, 26)) { G++; treeGlyph(t); }
+}
+
+// ================= sea =================
+function wave(x, y) {
+  const row = (ox, oy, n, w) => { const p = []; for (let i = 0; i <= n * 8; i++) { const t = i / 8; p.push([x + ox + t * w, y + oy - Math.abs(Math.sin(t * Math.PI)) * 2.8]); } return p; };
+  S('sea', row(-11, 0, 2, 9), { w: .85, color: SEA, speed: 900 });
+  S('sea', row(-6, 5, 2, 7), { w: .75, color: SEA, speed: 900 });
+}
+function ripple(x, y, a, w = 12) { const p = []; for (let i = 0; i <= 8; i++) { const t = i / 8; p.push([x + a + (t - .5) * w, y + 3 - Math.sin(t * Math.PI * 2) * 1.1]); } return p; }
+function ship(x, y, d) {
+  const tr = p => p.map(([a, b]) => [x + a * d, y + b]);
+  S('sea', tr([[0, -7], [0, -46]]), { w: 1.1, speed: 400 });
+  const hull = tr([[-23, -9], [-19, 1], [-8, 5], [9, 5], [19, 1], [28, -10], [22, -7], [-23, -7], [-23, -9]]);
+  S('sea', hull, { w: 1.2, speed: 420, erase: hull });
+  const sail = tr([[-14, -39], [14, -39], [17.5, -27], [14, -15], [-14, -15], [-17.5, -27], [-14, -39]]);
+  S('sea', sail, { w: 1.05, speed: 420, erase: sail });
+  S('sea', tr([[-5, -38], [-6.5, -27], [-5, -16]]), { w: .6, speed: 500 });
+  S('sea', tr([[6, -38], [7.5, -27], [6, -16]]), { w: .6, speed: 500 });
+  S('sea', tr([[0, -46], [11, -43.5], [0, -41]]), { w: .9, color: RED, speed: 300 });
+  S('sea', tr(zigzag([-21, -6.5], [-17, 1.5], [16, 1], 7)), { w: .55, speed: 900 });
+  S('sea', ripple(x, y + 5, 0, 64), { w: .8, color: SEA, speed: 600 });
+}
+function serpent(x, y, d) {
+  const tr = p => p.map(([a, b]) => [x + a * d, y + b]);
+  const hump = (a, b, h) => {
+    const o = [], q = [];
+    for (let i = 0; i <= 14; i++) { const t = i / 14; o.push([lerp(a, b, t), -Math.sin(Math.PI * t) * h]); }
+    for (let i = 14; i >= 0; i--) { const t = i / 14; q.push([lerp(a + 6, b - 6, t), -Math.sin(Math.PI * t) * (h - 6)]); }
+    return [o, o.concat(q)];
+  };
+  const spikes = (a, b, h) => { const p = []; for (let i = 0; i <= 6; i++) { const t = .22 + i / 6 * .56; p.push([lerp(a, b, t), -Math.sin(Math.PI * t) * (i % 2 ? h + 4.5 : h)]); } return p; };
+  S('sea', tr([[-60, 0], [-65, -5], [-71, -8], [-76, -6], [-78, -2]]), { w: 1.1, speed: 420 });
+  for (const [a, b, h] of [[-56, -30, 13], [-24, 4, 19]]) {
+    const [outer, full] = hump(a, b, h);
+    S('sea', tr(full), { w: 1.15, speed: 420, erase: tr(outer) });
+    S('sea', tr(spikes(a, b, h)), { w: .8, speed: 600 });
+  }
+  const head = [[10, 0], [11, -16], [16, -30], [24, -39], [33, -41], [42, -37], [44, -34], [34, -32], [39, -29], [30, -26.5], [24, -20], [21, -10], [19, 0]];
+  S('sea', tr(head), { w: 1.2, speed: 380, erase: tr(head) });
+  S('sea', tr(circlePts(31, -36.5, 1.2, 0, 8)), { w: 1.6, speed: 200 });
+  for (const a of [-60, -27, 6, 17]) S('sea', ripple(x, y, a * d), { w: .75, color: SEA, speed: 600 });
+}
+function makeSea() {
+  const deep = b => boxOn(b, v => v < -.17);
+  for (let t = 0, n = 0; t < 250 && n < 2; t++) {
+    const x = rand(FR.x0 + 60, FR.x1 - 60), y = rand(FR.y0 + 70, FR.y1 - 30), b = [x - 36, y - 50, x + 36, y + 12];
+    if (!occFree(...b, B_ALL) || !deep(b)) continue;
+    G++; ship(x, y, rng() < .5 ? 1 : -1); occMark(...b, B_GLYPH); n++;
+  }
+  for (let t = 0; t < 250; t++) {
+    const x = rand(FR.x0 + 90, FR.x1 - 90), y = rand(FR.y0 + 60, FR.y1 - 30), b = [x - 84, y - 46, x + 84, y + 10];
+    if (!occFree(...b, B_ALL) || !deep(b)) continue;
+    G++; serpent(x, y, rng() < .5 ? 1 : -1); occMark(...b, B_GLYPH); break;
+  }
+  const placed = [];
+  for (let t = 0; t < 700 && placed.length < 18; t++) {
+    const x = rand(FR.x0 + 30, FR.x1 - 30), y = rand(FR.y0 + 30, FR.y1 - 20), b = [x - 16, y - 8, x + 16, y + 8];
+    if (placed.some(p => Math.hypot(p[0] - x, p[1] - y) < 75) || !occFree(...b, B_ALL) || !deep(b)) continue;
+    G++; wave(x, y); placed.push([x, y]); occMark(...b, B_GLYPH);
+  }
+  nnOrder('sea');
+}
+
+function makeRhumbs(cx, cy, R) {
+  for (let k = 0; k < 16; k++) {
+    const a = k / 16 * Math.PI * 2 - Math.PI / 2, dx = Math.cos(a), dy = Math.sin(a);
+    let run = [];
+    const flush = () => { if (run.length >= 4) { G++; S('rhumb', run, { w: k % 4 === 0 ? .75 : .55, color: FAINT, speed: 4000 }); } run = []; };
+    for (let r = R + 14; ; r += 6) {
+      const x = cx + dx * r, y = cy + dy * r;
+      if (x < FR.x0 + 2 || x > FR.x1 - 2 || y < FR.y0 + 2 || y > FR.y1 - 2) break;
+      if (hAt(x, y) < -.17 && !(occAt(x, y) & B_ALL)) run.push([x, y]); else flush();
+    }
+    flush();
+  }
+}
+
+// ================= world generation =================
+let SEED = 1;
+function generate(seed) {
+  rng = mulberry32(seed);
+  nA = makeNoise(seed * 7 + 1); nB = makeNoise(seed * 13 + 2); nC = makeNoise(seed * 17 + 3); nD = makeNoise(seed * 19 + 4);
+  setupCanvases();
+  P = {}; G = 0; occ.fill(0); usedNames.clear();
+  cvWash.style.transition = 'none'; cvWash.classList.remove('on'); void cvWash.offsetWidth; cvWash.style.transition = '';
+  const title = pick(['The Realm of ', 'The Kingdoms of ', 'The Lands of ', 'The Isles of ']) + uniqueName();
+  const cc = pick(['tl', 'tr', 'bl', 'br']), sb = cc === 'bl' ? 'br' : cc === 'br' ? 'bl' : pick(['bl', 'br']);
+  const CP = { tl: [180, 195], tr: [1420, 195], bl: [180, 805], br: [1420, 805] }[cc], R = 66;
+  const SB = sb === 'bl' ? [100, 898] : [1300, 898];
+  const bw = measure(title, Object.assign({}, TDEF, { sc: true, italic: false, size: 38 })) + 100;
+  reserved = [
+    { x0: 800 - bw / 2 - 80, y0: 60, x1: 800 + bw / 2 + 80, y1: 150 },
+    { x0: CP[0] - R - 30, y0: CP[1] - R - 40, x1: CP[0] + R + 30, y1: CP[1] + R + 30 },
+    { x0: SB[0] - 20, y0: SB[1] - 25, x1: SB[0] + 220, y1: SB[1] + 35 },
+    { x0: 560, y0: 915, x1: 1040, y1: 944 }
+  ];
+  buildField(); analyse(); paintParchment(); paintWash();
+  border(); compassRose(CP[0], CP[1], R); titleBanner(800, 104, title); scaleBar(SB[0], SB[1]); signature();
+  coasts(); shallows(); regionLabels(); seaLabels(); makeRivers(); makeCities(); makeRoads();
+  makeMountains(); makeHills(); makeForests(); makeSea(); makeRhumbs(CP[0], CP[1], R);
+  ops = [];
+  const add = ph => { for (const op of (P[ph] || [])) ops.push(op); };
+  ['border', 'compass', 'rhumb', 'coast'].forEach(add);
+  ops.push({ type: 'event', fn: () => cvWash.classList.add('on') });
+  ['shallow', 'river', 'mount', 'hill', 'forest', 'road', 'city', 'region', 'sealabel', 'sea', 'title', 'scale', 'sig'].forEach(add);
+  ops.push({ type: 'pause', dur: .5 }, { type: 'move', to: [1490, 975] });
+}
+
+// ================= the quill: playback engine =================
+const PACE = 1.35;                                  // overall tempo at 1×
+let opI = 0, mode = 'travel', trv = null, speed = 1, paused = false, total = 1;
+const pen = { x: W + 120, y: H + 160, lift: 40, ang: 22, px: W + 120 };
+const travelTime = d => d < 2.5 ? 0 : .012 + Math.min(.7, d / 2600) + (d > 200 ? .08 : 0);
+function startPoint(op) {
+  if (op.type === 'stroke') return op.pts[0];
+  if (op.type === 'text') return [op.x0 - op.size * .25, op.y - op.size * .32];
+  if (op.type === 'move') return op.to;
+  return null;
+}
+function prep() {                                   // lengths + timeline estimate for the progress bar
+  let pos = [pen.x, pen.y], t = 0;
+  for (const op of ops) {
+    const s = startPoint(op);
+    if (s) { t += travelTime(dist(pos, s)); pos = s; }
+    op.t0 = t;
+    if (op.type === 'stroke') {
+      const p = op.pts, c = new Float32Array(p.length);
+      for (let i = 1; i < p.length; i++) c[i] = c[i - 1] + dist(p[i], p[i - 1]);
+      op.cum = c; op.len = c[p.length - 1]; op.k = 0; op.d = 0; op.lastPt = null; op.seed = rand(0, 500);
+      t += op.len / op.speed; pos = p[p.length - 1];
+    } else if (op.type === 'text') {
+      op.pad = op.size * .25; op.len = op.width + op.pad * 2; op.d = 0;
+      t += op.len / op.speed; pos = [op.x0 + op.width + op.pad, op.y];
+    } else if (op.type === 'pause') { op.t = 0; t += op.dur; }
+  }
+  total = t;
+}
+function at(op, d) {
+  const p = op.pts, c = op.cum;
+  while (op.k < p.length - 2 && c[op.k + 1] < d) op.k++;
+  const k = op.k, s = c[k + 1] - c[k] || 1, u = clamp((d - c[k]) / s, 0, 1);
+  return [p[k][0] + (p[k + 1][0] - p[k][0]) * u, p[k][1] + (p[k + 1][1] - p[k][1]) * u];
+}
+function widthAt(op, m) {
+  let w = op.wf ? op.wf(m / op.len) : op.w;
+  if (op.flat) return w;
+  w *= 1 + .2 * nC.n2(m * .035, op.seed);            // pressure wobble
+  const e = Math.min(m, op.len - m); if (op.len > 10 && e < 5) w *= .5 + .1 * e;   // tapered ends
+  return Math.max(.3, w);
+}
+function inkStroke(op, d0, d1) {
+  const c = ictx; c.strokeStyle = op.color; c.lineCap = op.cap || 'round'; c.lineJoin = 'round';
+  let s = d0, a = op.lastPt || at(op, d0);
+  const per = op.dash ? op.dash[0] + op.dash[1] : 0;
+  while (s < d1 - 1e-6) {
+    const e = Math.min(d1, s + 2), b = at(op, e), m = (s + e) * .5;
+    if (!per || (m % per) < op.dash[0]) {
+      let ax = a[0], ay = a[1];
+      if (op.flat) {                                  // overlap butt-capped pieces so no seams show
+        const ext = Math.min(.8, per ? s % per : s), l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        ax -= (b[0] - a[0]) / l * ext; ay -= (b[1] - a[1]) / l * ext;
+      }
+      c.lineWidth = widthAt(op, m); c.beginPath(); c.moveTo(ax, ay); c.lineTo(b[0], b[1]); c.stroke();
+    }
+    a = b; s = e;
+  }
+  op.lastPt = a;
+}
+const snap = v => Math.round(v * RES) / RES;
+function inkText(op, d0, d1) {
+  const X0 = snap(op.x0 - op.pad + d0), X1 = snap(op.x0 - op.pad + d1); if (X1 <= X0) return;
+  const c = ictx; c.save();
+  c.beginPath(); c.rect(X0, op.y - op.size * 1.25, X1 - X0, op.size * 1.8); c.clip();
+  c.font = op.font; c.fillStyle = op.color; c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+  if (op.chars) for (const [ch, x] of op.chars) c.fillText(ch, x, op.y); else c.fillText(op.text, op.x0, op.y);
+  c.restore();
+}
+function eraseUnder(poly) {                         // nearer glyphs hide what is behind them
+  const c = ictx; c.save(); c.globalCompositeOperation = 'destination-out';
+  c.beginPath(); poly.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath(); c.fill();
+  c.restore();
+}
+function next() { opI++; mode = 'travel'; }
+function step(dt) {
+  while (dt > 0 && opI < ops.length) {
+    const op = ops[opI];
+    if (mode === 'travel') {
+      if (!trv) {
+        const s = startPoint(op); if (!s) { mode = 'draw'; continue; }
+        const d = dist([pen.x, pen.y], s);
+        trv = { x0: pen.x, y0: pen.y, x1: s[0], y1: s[1], t: 0, dur: travelTime(d), h: op.type === 'move' ? 50 : Math.min(38, 4 + d * .1), l0: pen.lift, l1: op.type === 'move' ? 34 : 0 };
+      }
+      const rem = trv.dur - trv.t;
+      if (rem <= dt) {
+        dt -= rem; pen.x = trv.x1; pen.y = trv.y1; pen.lift = trv.l1; trv = null; mode = 'draw';
+        if (op.erase) eraseUnder(op.erase);
+        continue;
+      }
+      trv.t += dt; dt = 0;
+      const u = trv.t / trv.dur, e = u < .5 ? 2 * u * u : 1 - 2 * (1 - u) * (1 - u);
+      pen.x = lerp(trv.x0, trv.x1, e); pen.y = lerp(trv.y0, trv.y1, e);
+      pen.lift = lerp(trv.l0, trv.l1, e) + Math.sin(Math.PI * u) * trv.h;
+    } else if (op.type === 'stroke' || op.type === 'text') {
+      const need = (op.len - op.d) / op.speed, use = Math.min(need, dt), d1 = use >= need ? op.len : op.d + use * op.speed;
+      if (op.type === 'stroke') { inkStroke(op, op.d, d1); pen.x = op.lastPt[0]; pen.y = op.lastPt[1]; }
+      else {
+        inkText(op, op.d, d1);
+        pen.x = op.x0 - op.pad + d1;
+        pen.y = op.y - op.size * .32 + Math.sin(d1 / (op.size * .42) * Math.PI) * op.size * .26;
+      }
+      op.d = d1; dt -= use; if (op.d >= op.len) next();
+    } else if (op.type === 'event') { op.fn(); next(); }
+    else if (op.type === 'pause') { op.t += dt; if (op.t >= op.dur) { dt = op.t - op.dur; next(); } else dt = 0; }
+    else next();
+  }
+}
+
+let tNow = 0;
+function renderQuill(dt) {
+  tNow += dt;
+  const vx = (pen.x - pen.px) / Math.max(dt, 1e-3); pen.px = pen.x;
+  const writing = mode === 'draw' && opI < ops.length && !paused;
+  const target = 22 + clamp(vx * .004, -9, 9) + (writing ? Math.sin(tNow * 11) * 1.1 : 0);
+  pen.ang += (target - pen.ang) * Math.min(1, dt * 5);
+  const L = pen.lift, a = pen.ang * Math.PI / 180, co = Math.cos(a), si = Math.sin(a);
+  quillEl.style.transform = `translate(${pen.x}px,${pen.y - L}px) rotate(${pen.ang}deg) scale(${1 + L * .003})`;
+  // shadow: skewed so it meets the nib on contact and falls away down-right along the feather
+  shadowEl.style.transform = `matrix(${co},${si},${-si - .2},${co - .12},${pen.x + L * .9},${pen.y + L * .55})`;
+  shadowEl.style.opacity = Math.max(.08, .3 - L * .0025).toFixed(3);
+}
+
+// ================= controls =================
+const progressEl = $('progress');
+let lastTs = 0;
+function loop(ts) {
+  const dt = Math.min(.05, lastTs ? (ts - lastTs) / 1000 : 0); lastTs = ts;
+  if (!paused) step(dt * speed * PACE);
+  renderQuill(dt);
+  const t = opI < ops.length ? ops[opI].t0 : total;
+  progressEl.style.width = (100 * Math.min(1, t / total)) + '%';
+  requestAnimationFrame(loop);
+}
+function setPaused(p) { paused = p; $('btnPause').textContent = p ? 'Resume' : 'Pause'; }
+function start(seed) {
+  SEED = seed >>> 0;
+  try { history.replaceState(null, '', '#' + SEED); } catch (e) {}
+  generate(SEED);
+  opI = 0; mode = 'travel'; trv = null; setPaused(false);
+  prep();
+}
+const newSeed = () => (Math.random() * 1e9) >>> 0;
+document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => {
+  speed = +b.dataset.speed;
+  document.querySelectorAll('[data-speed]').forEach(x => x.classList.toggle('on', x === b));
+  cvWash.style.transitionDuration = (4 / speed) + 's';
+});
+$('btnPause').onclick = () => setPaused(!paused);
+$('btnRedraw').onclick = () => start(SEED);
+$('btnNew').onclick = () => start(newSeed());
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); setPaused(!paused); }
+  else if (e.key === 'n' || e.key === 'N') start(newSeed());
+  else if (e.key === 'r' || e.key === 'R') start(SEED);
+});
+addEventListener('resize', layout);
+
+(async function init() {
+  layout();
+  try {
+    await Promise.race([
+      Promise.all(['38px "IM Fell English SC"', 'italic 20px "IM Fell English"', '20px "IM Fell English"'].map(f => document.fonts.load(f))),
+      new Promise(r => setTimeout(r, 3000))
+    ]);
+  } catch (e) {}
+  const h = parseInt(location.hash.slice(1), 10);
+  start(Number.isFinite(h) ? h : newSeed());
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
