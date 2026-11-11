@@ -4620,8 +4620,11 @@ function frame(now) {
 // Manette (PS4 / Xbox via l'API Gamepad)
 const PAD_MAP = { 2: 'attack', 0: 'jump', 1: 'dash', 3: 'pick', 5: 'special', 7: 'special', 4: 'crs', 6: 'crs' };
 const padPrev = {};
+let padOk = true;
 function pollPad() {
-  const list = navigator.getGamepads ? navigator.getGamepads() : [];
+  let list = [];
+  // certaines pages intégrées refusent l'accès aux manettes : on n'insiste pas
+  if (padOk && navigator.getGamepads) { try { list = navigator.getGamepads() || []; } catch (e) { padOk = false; } }
   let gp = null;
   for (const g of list) if (g && g.connected) { gp = g; break; }
   S.gamepad = gp;
@@ -4795,6 +4798,8 @@ $('qualityBtn2').addEventListener('click', toggleQuality);
 //  Lancement
 // =====================================================================
 await step('Calcul des textures');
+// les enseignes sont dessinées avec les polices du jeu : on leur laisse un court délai pour arriver
+try { await Promise.race([Promise.all([document.fonts.load('400 92px Anton'), document.fonts.load('700 26px "Barlow Condensed"')]), new Promise(r => setTimeout(r, 2000))]); } catch (e) { /* polices de secours */ }
 buildTextures(); initMaterials(); initHumanTextures();
 await step('Modélisation du gérant');
 genHeroModel();
