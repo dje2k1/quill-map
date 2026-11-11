@@ -662,7 +662,13 @@ function buildComposer() {
     };
     composer.addPass(gtao);
   }
-  if (Q.bloom) { bloomPass = new UnrealBloomPass(new V2(w, h), 0.3, 0.22, 1.1); composer.addPass(bloomPass); }
+  if (Q.bloom) {
+    bloomPass = new UnrealBloomPass(new V2(w, h), 0.3, 0.22, 1.1);
+    // les reflets ponctuels (flaques, verre, métal) ne doivent pas noyer l'image dans le halo
+    const hp = bloomPass.materialHighPassFilter;
+    hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', 'vec4 texel = min( texture2D( tDiffuse, vUv ), vec4( 4.0 ) );');
+    composer.addPass(bloomPass);
+  }
   finalPass = new ShaderPass(FinalShader);
   finalPass.material.toneMapped = false;   // la passe applique elle-même ACES et l'encodage sRGB
   composer.addPass(finalPass);
@@ -1109,6 +1115,14 @@ uniform sampler2D uDet; uniform vec3 uDetP; varying vec3 vBP; varying vec3 vBN;
 vec3 triDet() { vec3 w = pow(abs(normalize(vBN)), vec3(4.0)); w /= (w.x + w.y + w.z); vec3 p = vBP * uDetP.x;
   return texture2D(uDet, p.zy).rgb * w.x + texture2D(uDet, p.xz).rgb * w.y + texture2D(uDet, p.xy).rgb * w.z; }
 `;
+// Lumière d'appoint des personnages : ombres débouchées et liseré de contre-jour (lisibilité de nuit)
+const CHAR_U = { uFill: { value: new V3(0.07, 0.075, 0.1) }, uRim: { value: new V3(0.55, 0.66, 0.95) } };
+const CH_FINAL_PARS = 'uniform vec3 uFill; uniform vec3 uRim;\n';
+const CH_FINAL = /* glsl */`{
+  vec3 cN = normalize(normal), cV = normalize(vViewPosition);
+  float cRim = pow(1.0 - saturate(dot(cN, cV)), 3.0) * (0.4 + 0.6 * saturate((vec4(cN, 0.0) * viewMatrix).y * 0.5 + 0.5));
+  outgoingLight += diffuseColor.rgb * uFill + uRim * cRim * vColor.g * (0.11 + diffuseColor.rgb * 0.5);
+}`;
 const CH_ALBEDO = `vec3 det = triDet(); diffuseColor.rgb *= 1.0 + (det.g - 0.5) * 2.0 * uDetP.z;\n`;
 const CH_ROUGH = `roughnessFactor = clamp(roughnessFactor + (det.b - 0.5) * 0.3, 0.05, 1.0);\n`;
 const CH_NORMAL = /* glsl */`{
@@ -1129,13 +1143,13 @@ function detU(det, scale, bump, tint) { return { uDet: { value: TEX.det[det] }, 
 // Tissu (sweat, t-shirt, jean) avec impressions projetées devant / derrière
 function clothMat(o) {
   const C = o.sheen ? MP : MS;
-  const m = new C({ color: o.color, roughness: o.rough ?? 0.92, vertexColors: true, envMapIntensity: 0.6 });
+  const m = new C({ color: o.color, roughness: o.rough ?? 0.92, vertexColors: true, envMapIntensity: 1.1 });
   if (o.sheen) { m.sheen = o.sheen; m.sheenRoughness = 0.75; m.sheenColor.set(o.sheenColor ?? 0xffffff); }
-  const u = { ...detU(o.det || 'fleece', o.scale ?? 12, o.bump ?? 1.6, o.tint ?? 0.5), uPrint: { value: o.print || TEX_NOPRINT }, uPrF: { value: new THREE.Vector4(...(o.front || [0, 0, 0, 0])) }, uPrB: { value: new THREE.Vector4(...(o.back || [0, 0, 0, 0])) } };
+  const u = { ...CHAR_U, ...detU(o.det || 'fleece', o.scale ?? 12, o.bump ?? 1.6, o.tint ?? 0.5), uPrint: { value: o.print || TEX_NOPRINT }, uPrF: { value: new THREE.Vector4(...(o.front || [0, 0, 0, 0])) }, uPrB: { value: new THREE.Vector4(...(o.back || [0, 0, 0, 0])) } };
   m.userData.u = u;
   return patchMat(m, 'cloth' + (o.sheen ? 'P' : 'S'), {
     uniforms: u, vpars: 'varying vec3 vBP; varying vec3 vBN;', vmain: 'vBP = position; vBN = normal;',
-    fpars: CH_FPARS + 'uniform sampler2D uPrint; uniform vec4 uPrF; uniform vec4 uPrB;\n',
+    fpars: CH_FPARS + CH_FINAL_PARS + 'uniform sampler2D uPrint; uniform vec4 uPrF; uniform vec4 uPrB;\n', final: CH_FINAL,
     albedo: CH_ALBEDO + /* glsl */`{
       vec2 pf = (vBP.xy - uPrF.xy) / max(uPrF.zw, vec2(1e-4)); float mf = step(0.2, vBN.z) * step(abs(pf.x), 1.0) * step(abs(pf.y), 1.0) * step(1e-3, uPrF.z);
       vec4 tf = texture2D(uPrint, vec2(pf.x * 0.25 + 0.25, pf.y * 0.5 + 0.5));
@@ -1149,12 +1163,12 @@ function clothMat(o) {
 }
 // Peau : masques par sommet aW = (barbe, sourcils, lèvres, rougeurs)
 function skinMat(o) {
-  const m = new MS({ color: o.color, roughness: o.rough ?? 0.5, vertexColors: true, envMapIntensity: 0.7 });
-  const u = { ...detU('skin', 30, 1.2, 0.5), uHairC: { value: new THREE.Color(o.hair ?? 0x2a1a10) }, uNoise: U.noise };
+  const m = new MS({ color: o.color, roughness: o.rough ?? 0.5, vertexColors: true, envMapIntensity: 1.1 });
+  const u = { ...CHAR_U, ...detU('skin', 30, 1.2, 0.5), uHairC: { value: new THREE.Color(o.hair ?? 0x2a1a10) }, uNoise: U.noise };
   m.userData.u = u;
   return patchMat(m, 'skin', {
     uniforms: u, vpars: 'varying vec3 vBP; varying vec3 vBN; attribute vec4 aW; varying vec4 vW;', vmain: 'vBP = position; vBN = normal; vW = aW;',
-    fpars: CH_FPARS + 'varying vec4 vW; uniform vec3 uHairC; uniform sampler2D uNoise; float skinHair = 0.0;\n',
+    fpars: CH_FPARS + CH_FINAL_PARS + 'varying vec4 vW; uniform vec3 uHairC; uniform sampler2D uNoise; float skinHair = 0.0;\n', final: CH_FINAL,
     albedo: CH_ALBEDO + /* glsl */`{
       float hn = texture2D(uNoise, vBP.xy * 23.0 + vBP.z * 9.0).a, hn2 = texture2D(uNoise, vBP.xy * 61.0 - vBP.z * 17.0).a;
       skinHair = max(smoothstep(0.36, 0.6, vW.x + (hn - 0.5) * 0.45), smoothstep(0.4, 0.6, vW.y + (hn - 0.5) * 0.35));
@@ -1168,12 +1182,12 @@ function skinMat(o) {
 }
 // Plusieurs matières sur un même maillage : aW = poids de 4 teintes (cagoule / peau / chaussures / semelles…)
 function partsMat(o) {
-  const m = new MS({ color: 0xffffff, roughness: 1, vertexColors: true, envMapIntensity: 0.6 });
-  const u = { ...detU(o.det || 'leather', o.scale ?? 14, o.bump ?? 1.2, 0.35), uC0: { value: new THREE.Color(o.c[0]) }, uC1: { value: new THREE.Color(o.c[1]) }, uC2: { value: new THREE.Color(o.c[2]) }, uC3: { value: new THREE.Color(o.c[3]) }, uRo: { value: new THREE.Vector4(...(o.r || [0.9, 0.55, 0.6, 0.8])) } };
+  const m = new MS({ color: 0xffffff, roughness: 1, vertexColors: true, envMapIntensity: 1.1 });
+  const u = { ...CHAR_U, ...detU(o.det || 'leather', o.scale ?? 14, o.bump ?? 1.2, 0.35), uC0: { value: new THREE.Color(o.c[0]) }, uC1: { value: new THREE.Color(o.c[1]) }, uC2: { value: new THREE.Color(o.c[2]) }, uC3: { value: new THREE.Color(o.c[3]) }, uRo: { value: new THREE.Vector4(...(o.r || [0.9, 0.55, 0.6, 0.8])) } };
   m.userData.u = u;
   return patchMat(m, 'parts', {
     uniforms: u, vpars: 'varying vec3 vBP; varying vec3 vBN; attribute vec4 aW; varying vec4 vW;', vmain: 'vBP = position; vBN = normal; vW = aW;',
-    fpars: CH_FPARS + 'varying vec4 vW; uniform vec3 uC0; uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3; uniform vec4 uRo;\n',
+    fpars: CH_FPARS + CH_FINAL_PARS + 'varying vec4 vW; uniform vec3 uC0; uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3; uniform vec4 uRo;\n', final: CH_FINAL,
     albedo: 'vec4 pw = vW / max(1e-4, vW.x + vW.y + vW.z + vW.w); diffuseColor.rgb *= uC0 * pw.x + uC1 * pw.y + uC2 * pw.z + uC3 * pw.w;\n' + CH_ALBEDO,
     rough: 'roughnessFactor = dot(pw, uRo);\n' + CH_ROUGH, normal: CH_NORMAL,
   });
@@ -1220,7 +1234,7 @@ function groundMat(surf, o = {}) {
       normal = normalize(mix(normal, nonPerturbedNormal, gPud * 0.92));
       if (gPud > 0.05 && uWetP.z > 0.0) { vec2 rp = ripples(vWP.xz, uTime) * gPud * uWetP.z * 0.3; normal = normalize(normal + (viewMatrix * vec4(rp.x, 0.0, rp.y, 0.0)).xyz); }
     }`,
-    final: /* glsl */`outgoingLight -= reflectedLight.directSpecular * (1.0 - uSpecK);
+    final: /* glsl */`{ vec3 dsp = reflectedLight.directSpecular; outgoingLight += min(dsp * uSpecK, vec3(3.0)) - dsp; }
     if (uReflOn > 0.5) {
       vec4 rc = uReflM * vec4(vWP, 1.0);
       vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
@@ -1252,6 +1266,8 @@ const G = {
   sphere: (r, w = 20, h = 14) => cg(`s${r}_${w}`, () => new THREE.SphereGeometry(r, w, h)),
   cyl: (a, b, h, s = 16) => cg(`c${a}_${b}_${h}_${s}`, () => new THREE.CylinderGeometry(a, b, h, s)),
   box: (w, h, d) => cg(`b${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d)),
+  plane: (w, h) => cg(`pl${w}_${h}`, () => new THREE.PlaneGeometry(w, h)),
+  octa: r => cg(`oc${r}`, () => new THREE.OctahedronGeometry(r)),
   rbox: (w, h, d, r = 0.02) => cg(`rb${w}_${h}_${d}_${r}`, () => roundedBox(w, h, d, r)),
   capsule: (r1, r2, len, seg = 14) => cg(`cap${r1}_${r2}_${len}`, () => {
     const pts = [], n = 6;
@@ -1751,7 +1767,7 @@ function sdfArm(rig, B, sd) {   // bras nu, de la manche au poignet
 }
 // Tête : crâne, front, mâchoire, pommettes, arcades, nez, bouche, orbites, paupières, oreilles
 function addHead(s, o = {}) {
-  const P = (x, y, z) => [HEADC[0] + x, HEADC[1] + y, HEADC[2] + z], f = o.fat || 0, g = o.beard || 0, eo = o.eyeOpen || 0;
+  const P = (x, y, z) => [HEADC[0] + x, HEADC[1] + y, HEADC[2] + z], f = o.fat || 0, g = o.beard || 0, eo = o.eyeOpen || 0, br = o.brow || 0;
   s.ell('head', P(0, 0.025, -0.012), [0.0775, 0.0925, 0.094], { k: 0.03 });
   s.ell('head', P(0, 0.04, 0.035), [0.066, 0.06, 0.055], { k: 0.03 });
   s.ell('head', P(0, -0.035, 0.035), [0.06 + f * 0.008, 0.07, 0.062], { k: 0.03 });
@@ -1764,7 +1780,7 @@ function addHead(s, o = {}) {
     s.ell('head', P(sd * 0.078, -0.012, -0.012), [0.008, 0.03, 0.017], { k: 0.008, rot: [0, sd * 0.35, 0] });
   }
   if (f) s.ell('head', P(0, -0.108, 0.022), [0.056, 0.03, 0.056], { k: 0.03, grow: g * 0.6 });
-  s.cap('head', P(-0.042, 0.022, 0.08), P(0.042, 0.022, 0.08), 0.016, 0.016, { k: 0.02 });
+  s.cap('head', P(-0.042, 0.022 - br * 0.0028, 0.08 + br * 0.002), P(0.042, 0.022 - br * 0.0028, 0.08 + br * 0.002), 0.016 + br * 0.0012, 0.016 + br * 0.0012, { k: 0.02 });
   s.cap('head', P(0, 0.012, 0.088), P(0, -0.036, 0.104), 0.0115, 0.0115, { k: 0.015 });
   s.ell('head', P(0, -0.042, 0.1075), [0.0125, 0.012, 0.0125], { k: 0.01 });
   for (const sd of [-1, 1]) s.ell('head', P(sd * 0.0135, -0.047, 0.096), [0.01, 0.0095, 0.01], { k: 0.008 });
@@ -1847,7 +1863,7 @@ function genHeroModel() {
   } });
   // tête : masques de barbe, sourcils, lèvres, rougeurs
   const hw = rig.world[rig.idx.head].elements, hx0 = hw[12] + HEADC[0], hy0 = hw[13] + HEADC[1], hz0 = hw[14] + HEADC[2];
-  const sHead = sdfHead(rig, B, { fat: 1, beard: A.beard ? 0.005 : 0 });
+  const sHead = sdfHead(rig, B, { fat: 1, beard: A.beard ? 0.005 : 0, eyeOpen: -0.0008, brow: 1 });
   const head = sHead.build({ cell: 0.0044 * CELLQ, R: 0.05, eps: 0.0014, attr: (x, y, z, nx, ny, nz, out) => {
     const hx = x - hx0, hy = y - hy0, hz = z - hz0, ax = Math.abs(hx);
     if (A.beard) {
@@ -1938,10 +1954,11 @@ const bumpGLSL = (h, k) => `{ vec2 dH = vec2(dFdx(${h}), dFdy(${h})) * ${k};
   normal = normalize(abs(fD) * normal - sign(fD) * (dH.x * R1 + dH.y * R2)); }\n`;
 function hairChunkMat(hex) {
   const m = new MS({ color: hex, roughness: 0.5, vertexColors: true, envMapIntensity: 0.8 });
-  const u = { uHairT: { value: TEX.hair.orm }, uHairP: { value: new V3(5.0, 1.3, 2.4) } };
+  const u = { ...CHAR_U, uHairT: { value: TEX.hair.orm }, uHairP: { value: new V3(5.0, 1.3, 2.4) } };
   return patchMat(m, 'hairchunk', {
     uniforms: u, vpars: 'varying vec3 vBP; varying vec3 vBN;', vmain: 'vBP = position; vBN = normal;',
-    fpars: `uniform sampler2D uHairT; uniform vec3 uHairP; varying vec3 vBP; varying vec3 vBN;
+    final: CH_FINAL,
+    fpars: CH_FINAL_PARS + `uniform sampler2D uHairT; uniform vec3 uHairP; varying vec3 vBP; varying vec3 vBN;
       vec4 triHair() { vec3 w = pow(abs(normalize(vBN)), vec3(3.0)); w /= (w.x + w.y + w.z);
         return texture2D(uHairT, vec2(vBP.z * uHairP.x, vBP.y * uHairP.y)) * w.x + texture2D(uHairT, vec2(vBP.x * uHairP.x, vBP.z * uHairP.y)) * w.y + texture2D(uHairT, vec2(vBP.x * uHairP.x, vBP.y * uHairP.y)) * w.z; }\n`,
     albedo: 'vec4 hd = triHair(); diffuseColor.rgb *= 0.4 + 1.3 * hd.a;\n',
@@ -1981,7 +1998,7 @@ function addEyes(c) {
   const mat = cached('eyeMat', () => new MS({ map: TEX.eye, roughness: 0.22, envMapIntensity: 0.9 }));
   for (const sd of [-1, 1]) { const e = mesh(G.sphere(0.0122, 16, 12), mat, false, false); e.position.set(HEADC[0] + sd * 0.032, HEADC[1] + 0.002, HEADC[2] + 0.0808); c.head.add(e); }
 }
-function disposeChar(c) { for (const m of c.mats) m.dispose(); for (const m of c.extra) if (m.dispose) m.dispose(); }
+function disposeChar(c) { for (const m of c.mats) m.dispose(); for (const m of c.extra) if (m.dispose) m.dispose(); c.skeleton.dispose(); }
 function setFlash(c, on, kind = flashMat) {
   const k = on ? kind : 0;
   if (c.flashK === k) return;
@@ -2002,11 +2019,12 @@ function buildPlayerModel() {
   const ix = M.rig.idx;
   c.belly = c.bones[ix.belly]; c.bellyY = c.belly.position.y; c.bellyO = 0; c.bellyV = 0;
   c.hairB = c.bones[ix.hairB]; c.hairL = c.bones[ix.hairL]; c.hairR = c.bones[ix.hairR]; c.hairA = 0; c.hairVel = 0; c.hairS = 0; c.hairSV = 0;
-  const ring = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), new THREE.MeshBasicMaterial({ map: TEX.ring, color: new THREE.Color(0.3, 0.75, 1.4), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const ring = new THREE.Mesh(G.plane(1.8, 1.8), new THREE.MeshBasicMaterial({ map: TEX.ring, color: new THREE.Color(0.3, 0.75, 1.4), transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+  c.extra.push(ring.material);
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; ring.userData.fx = true; ring.userData.noRefl = true; c.root.add(ring); c.ring = ring;
   return c;
 }
-const HOODIES = { casseur: [0x2b2c31, 0x33363d, 0x26272b, 0x2d3444, 0x38332c, 0x3d2226, 0x243329], voleur: [0x4d525c, 0x414c61, 0x5c554f, 0x60656d, 0x3a5548], lanceur: [0x4a1a1c, 0x571f1f, 0x3f1820], boss: [0x242428] };
+const HOODIES = { casseur: [0x3b3d45, 0x474b55, 0x35373e, 0x3a4763, 0x4f463b, 0x58313a, 0x344b3d], voleur: [0x5a606c, 0x4c5a74, 0x6b635b, 0x70767f, 0x44634f], lanceur: [0x6e2529, 0x7d2b2b, 0x5e2332], boss: [0x2f2f36] };
 const SKINS = [0xd9a07c, 0xc58a64, 0xe6b894, 0x8d5a3b, 0xb07a55, 0x6e4530];
 function buildRioterModel(type) {
   const M = MODELS.rioter, boss = type === 'boss';
@@ -2014,9 +2032,9 @@ function buildRioterModel(type) {
   const pr = !boss && Math.random() < 0.55 ? pick(PRINTS) : null;
   const top = clothMat({ color: pick(HOODIES[type]), det: boss ? 'leather' : 'fleece', scale: 9, bump: boss ? 1.0 : 0.8, tint: 0.45, rough: boss ? 0.55 : 0.94, print: pr, front: pr && Math.random() < 0.6 ? [0, 1.36, 0.085, 0.085] : null, back: pr && Math.random() < 0.6 ? [0, 1.3, 0.13, 0.13] : null });
   const jean = !boss && Math.random() < 0.3;
-  const pants = clothMat({ color: jean ? pick([0x33456a, 0x293752, 0x4a5c7c]) : pick([0x26272b, 0x2f3136, 0x3b3e45, 0x464a54]), det: jean ? 'denim' : 'fleece', scale: jean ? 15 : 9, bump: jean ? 1.3 : 0.8, tint: jean ? 0.8 : 0.4 });
+  const pants = clothMat({ color: jean ? pick([0x33456a, 0x293752, 0x4a5c7c]) : pick([0x33353b, 0x3d4047, 0x4a4e57, 0x565b66]), det: jean ? 'denim' : 'fleece', scale: jean ? 15 : 9, bump: jean ? 1.3 : 0.8, tint: jean ? 0.8 : 0.4 });
   const skinTone = pick(SKINS), bare = type === 'voleur' || (type !== 'boss' && Math.random() < 0.4);
-  const maskC = pick([0x242529, 0x2c2d33, 0x1f2024]);
+  const maskC = pick([0x2c2d32, 0x35363d, 0x26272c]);
   const bits = partsMat({ c: [maskC, skinTone, boss ? 0x242428 : pick([0xe8e6e0, 0x2a2a2e, 0xa8201c, 0xd8d4c8, 0x3a4050]), boss ? 0x2a2a2c : 0xdedad2], r: [0.92, 0.55, 0.6, 0.8], det: 'fleece', scale: 12, bump: 0.8 });
   const s = boss ? 1.4 : (type === 'voleur' ? 0.95 : 1) * rand(0.96, 1.05);
   const c = makeHuman(M, [{ geo: hoodUp ? M.hoodUp : M.hoodDown, mat: top }, { geo: M.pants, mat: pants }, { geo: boss ? M.bitsNoHead : bare ? M.bitsBare : M.bitsGloved, mat: bits }],
@@ -2199,8 +2217,19 @@ function initWorldTextures() {
     tag([['NO FUTUR', 'rgba(60,150,255,0.85)', 380, 180, 130, 0.06], ['06', 'rgba(255,200,40,0.9)', 800, 330, 170, -0.1], ['RIVIERA', 'rgba(230,60,50,0.8)', 300, 400, 90, 0.03]])];
   const ad = (bg, txt, sub) => canvasTex(256, 384, (g, W, H) => { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, bg[0]); gr.addColorStop(1, bg[1]); g.fillStyle = gr; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = font(64); g.fillText(txt, W / 2, 190); g.font = '700 26px "Barlow Condensed", Arial, sans-serif'; g.fillText(sub, W / 2, 250); });
   TEX.ads = [ad(['#ff5a2a', '#a01a50'], 'CARNAVAL', 'Nice · février'), ad(['#1a6aff', '#0a1a5a'], 'CÔTE D\'AZUR', 'Lignes d\'Azur · tram 1')];
-  TEX.oppo = canvasTex(256, 256, g => { g.fillStyle = '#1a1512'; g.fillRect(0, 0, 256, 256); for (let y = 16; y < 240; y += 48) for (let x = 14; x < 240; x += 40) { g.fillStyle = Math.random() < 0.3 ? '#ffcf7a' : '#07080a'; g.fillRect(x, y, 20, 30); } });
-  TEX.oppo.wrapS = TEX.oppo.wrapT = THREE.RepeatWrapping; TEX.oppo.repeat.set(5, 1.6);
+  TEX.oppo = canvasTex(512, 512, g => {   // façade d'en face : fenêtres hautes, quelques-unes éclairées derrière leurs rideaux
+    g.fillStyle = '#17120f'; g.fillRect(0, 0, 512, 512);
+    for (let y = 26; y < 500; y += 100) for (let x = 20; x < 500; x += 62) {
+      g.fillStyle = '#231c17'; g.fillRect(x - 4, y - 4, 34, 64);
+      const lit = Math.random() < 0.22;
+      if (lit) { const gr = g.createLinearGradient(x, y, x, y + 56); const w = pick(['#ffc884', '#ffdcae', '#e8b46a', '#cfd8e8']); gr.addColorStop(0, w); gr.addColorStop(1, '#7a4a1c'); g.fillStyle = gr; } else g.fillStyle = '#05070a';
+      g.fillRect(x, y, 26, 56);
+      g.fillStyle = '#17120f'; g.fillRect(x + 12, y, 2, 56); g.fillRect(x, y + 20, 26, 2);
+      if (lit && Math.random() < 0.6) { g.fillStyle = 'rgba(20,12,8,0.55)'; g.fillRect(x, y, rand(6, 12), 56); }
+      g.fillStyle = '#0c0a09'; g.fillRect(x - 6, y + 60, 38, 3);
+    }
+  });
+  TEX.oppo.wrapS = TEX.oppo.wrapT = THREE.RepeatWrapping; TEX.oppo.repeat.set(3, 1);
   TEX.frond = canvasTex(256, 64, (g, w, h) => {
     g.clearRect(0, 0, w, h); g.strokeStyle = '#3f6a2f'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
     for (let x = 6; x < w; x += 5) { const l = (1 - x / w) * 26 + 4; g.strokeStyle = `rgb(${rand(50, 80) | 0},${rand(100, 140) | 0},${rand(40, 60) | 0})`; g.lineWidth = 2; g.beginPath(); g.moveTo(x, h / 2); g.lineTo(x + 8, h / 2 - l); g.moveTo(x, h / 2); g.lineTo(x + 8, h / 2 + l); g.stroke(); }
@@ -2439,7 +2468,7 @@ function buildFacades() {
   LT.crossM = new MS({ color: 0x030303, emissive: 0xffffff, emissiveMap: TEX.cross, emissiveIntensity: 4 });
   const cross = mesh(G.box(0.12, 1.2, 1.2), [LT.crossM, LT.crossM, plain(0x111111), plain(0x111111), plain(0x111111), plain(0x111111)], false); cross.position.set(-16.2, 5.6, FZ + 1.0); scene.add(cross);
   // immeuble d'en face (hors champ, visible dans les reflets)
-  const ob = mesh(G.box(74, 17, 6), new MS({ map: TEX.oppo, emissive: 0xffffff, emissiveMap: TEX.oppo, emissiveIntensity: 0.5, roughness: 0.9 }), false, false); ob.position.set(0, 8.5, 31.5); scene.add(ob);
+  const ob = mesh(G.box(74, 17, 6), new MS({ map: TEX.oppo, emissive: 0xffffff, emissiveMap: TEX.oppo, emissiveIntensity: 0.9, roughness: 0.9 }), false, false); ob.position.set(0, 8.5, 31.5); scene.add(ob);
 }
 
 const cones = [];
@@ -2506,7 +2535,7 @@ function buildLights() {
   const pt = (name, hex, I, dist, x, y, z) => { const l = new THREE.PointLight(hex, I, dist, 2); l.position.set(x, y, z); scene.add(l); LIGHTS.push(l); l.userData.base = I; LT[name] = l; return l; };
   LT.hemi = new THREE.HemisphereLight(0x46558a, 0x241a14, 0.62); scene.add(LT.hemi);
   // lune : lumière froide et rasante venue de l'avant gauche
-  const moon = LT.moon = regShadow(new THREE.DirectionalLight(0xa9bcff, 1.9), 0, 2048);
+  const moon = LT.moon = regShadow(new THREE.DirectionalLight(0xb9c6f2, 1.9), 0, 2048);
   moon.position.set(-17, 26, 15); moon.target.position.set(0, 0, -1);
   Object.assign(moon.shadow.camera, { left: -24, right: 24, top: 20, bottom: -20, near: 2, far: 80 });
   moon.shadow.bias = -0.0005; moon.shadow.normalBias = 0.04; moon.shadow.radius = 2.5;
@@ -2578,11 +2607,11 @@ function weaponMesh(kind) {
     const grip = mesh(G.cyl(0.034, 0.034, 0.25, 10), plain(0x111111, 0.8)); grip.position.y = 0.0; g.add(grip);
   } else if (kind === 'panneau') {
     const p = mesh(G.cyl(0.04, 0.04, 1.6, 10), metalMat(0x9aa0a8)); p.position.y = 0.7; g.add(p);
-    const stopTex = canvasTex(256, 256, (c, w, h) => {
+    const stopMat = cached('stopSign', () => new MS({ roughness: 0.35, map: canvasTex(256, 256, (c, w, h) => {
       c.fillStyle = '#c8161a'; c.beginPath(); for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * TAU; c.lineTo(128 + Math.cos(a) * 124, 128 + Math.sin(a) * 124); } c.fill();
       c.strokeStyle = '#fff'; c.lineWidth = 8; c.stroke(); c.fillStyle = '#fff'; c.font = '400 86px Anton, Impact, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('STOP', 128, 134);
-    });
-    const s = mesh(G.cyl(0.42, 0.42, 0.04, 8), [plain(0x8a8f96, 0.5, 0.8), new MS({ map: stopTex, roughness: 0.35 }), plain(0x8a8f96, 0.5, 0.8)]);
+    }) }));
+    const s = mesh(G.cyl(0.42, 0.42, 0.04, 8), [plain(0x8a8f96, 0.5, 0.8), stopMat, plain(0x8a8f96, 0.5, 0.8)]);
     s.rotation.x = Math.PI / 2; s.rotation.y = Math.PI / 8; s.position.y = 1.5; g.add(s);
   }
   return g;
@@ -2641,13 +2670,13 @@ function bonusMesh(kind) {
     const s = mesh(G.cyl(0.162, 0.15, 0.1, 18), plain(0x8a5a33, 0.8), false); s.position.y = -0.02; g.add(s);
     const top = mesh(G.cyl(0.17, 0.17, 0.03, 18), plain(0x222222, 0.4), false); top.position.y = 0.17; g.add(top);
   } else if (kind === 'rage') {
-    g.add(mesh(new THREE.OctahedronGeometry(0.24), new MS({ color: 0x550000, emissive: 0xff2a1a, emissiveIntensity: 5, roughness: 0.3 })));
+    g.add(mesh(G.octa(0.24), cached('bonusRage', () => new MS({ color: 0x550000, emissive: 0xff2a1a, emissiveIntensity: 5, roughness: 0.3 }))));
   } else {
     g.add(mesh(G.rbox(0.3, 0.2, 0.18, 0.03), plain(0x1d2a4a, 0.5)));
-    const gy = mesh(G.cyl(0.08, 0.1, 0.13, 14), new MS({ color: 0x0a1a4a, emissive: 0x3a7aff, emissiveIntensity: 6, roughness: 0.2 }), false); gy.position.y = 0.17; g.add(gy);
+    const gy = mesh(G.cyl(0.08, 0.1, 0.13, 14), cached('bonusGyro', () => new MS({ color: 0x0a1a4a, emissive: 0x3a7aff, emissiveIntensity: 6, roughness: 0.2 })), false); gy.position.y = 0.17; g.add(gy);
     const ant = mesh(G.cyl(0.012, 0.012, 0.3, 6), plain(0x111111, 0.5)); ant.position.set(0.1, 0.22, 0); g.add(ant);
   }
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: kind === 'cafe' ? 0xffc06a : kind === 'rage' ? 0xff3a2a : 0x4a8aff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const glow = new THREE.Sprite(cached('bonusGlow' + kind, () => new THREE.SpriteMaterial({ map: TEX.glow, color: kind === 'cafe' ? 0xffc06a : kind === 'rage' ? 0xff3a2a : 0x4a8aff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })));
   glow.scale.setScalar(1.3); g.add(glow);
   return g;
 }
@@ -3337,7 +3366,7 @@ function damageWindow(w, n = 1) {
   if (w.hp <= 0) {
     w.broken = true; w.solid.on = false; w.glass.visible = false; w.crack.visible = false; for (const d of w.deco) d.visible = false;
     Sound.play('glass'); shake(0.35);
-    const shardMat = new MS({ color: 0xcfe6f2, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.7, envMapIntensity: 3, side: THREE.DoubleSide });
+    const shardMat = cached('shard', () => new MS({ color: 0xcfe6f2, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.7, envMapIntensity: 3, side: THREE.DoubleSide }));
     for (let i = 0; i < 26; i++) {
       const g = new THREE.BufferGeometry();
       const sz = rand(0.1, 0.35);
@@ -3355,7 +3384,7 @@ function damageWindow(w, n = 1) {
 }
 function repairWindows() {
   for (const w of windows) { w.hp = w.maxHp; w.broken = false; w.solid.on = true; w.glass.visible = true; w.crack.visible = true; w.crackMat.opacity = 0; for (const d of w.deco) d.visible = true; }
-  for (const s of glassShards) scene.remove(s); glassShards.length = 0;
+  for (const s of glassShards) { scene.remove(s); s.geometry.dispose(); } glassShards.length = 0;
 }
 function hitEnemy(e, dmg, dir, o = {}) {
   if (e.dead || e.removed || e.invuln > 0 || e.getUp > 0 || e.grabbed) return false;
@@ -3584,8 +3613,10 @@ function completeSteal(e) {
   setStock(k, S.stock[k] - 1);
   e.loot = k; e.goal = null;
   const m = productMesh(k); m.scale.setScalar(1.6); m.position.y = 2.75 * e.c.scale; e.c.root.add(m); e.lootMesh = m;
-  const ring = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: TEX.ring, color: new THREE.Color(1.6, 0.25, 0.2), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.userData.lootRing = true; ring.userData.fx = true; ring.userData.noRefl = true; e.c.root.add(ring); e.lootRing = ring;
+  if (!e.lootRing) {
+    const ring = new THREE.Mesh(G.plane(1.5, 1.5), cached('lootRing', () => new THREE.MeshBasicMaterial({ map: TEX.ring, color: new THREE.Color(1.6, 0.25, 0.2), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.userData.lootRing = true; ring.userData.fx = true; ring.userData.noRefl = true; e.c.root.add(ring); e.lootRing = ring;
+  }
   Sound.play('steal');
   floatText(`−1 ${STOCKDEF[k].short}`, e.pos.x, 2.9, e.pos.z, 'bad');
   if (S.stock[k] === 0 && !S.lastChance[k]) {
@@ -4412,13 +4443,17 @@ const DBG = { cam: null };
 function updateCamera(dt) {
   const a = innerWidth / innerHeight;
   const k = a < 0.7 ? 1.55 : a < 1.0 ? 1.3 : a < 1.35 ? 1.1 : 1;
-  S.zoom = lerp(S.zoom, S.zoomT > 0 ? 0.72 : 1, damp(S.zoomT > 0 ? 0.0005 : 0.05, dt));
+  // caméra dynamique : elle se rapproche quand la bagarre est serrée, recule quand les casseurs arrivent de loin
+  let far = -1;
+  if (player && S.mode === 'play') for (const e of enemies) if (!e.dead && !e.gassed) far = Math.max(far, Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z));
+  const zt = S.zoomT > 0 ? 0.7 : far < 0 ? 0.94 : clamp(0.8 + (far - 4.5) * 0.045, 0.8, 1);
+  S.zoom = lerp(S.zoom, zt, damp(S.zoomT > 0 ? 0.0005 : 0.25, dt));
   let tx, ty, tz, px, py, pz, dof = 0, focus = 12;
   if (S.mode === 'title' || !player) {
     // plan de présentation : le Responsable devant sa vitrine, lent travelling
     const s = Math.sin(S.time * 0.2);
     const wide = a > 1.25;   // sur grand écran, le gérant se tient à droite du titre
-    tx = wide ? -1.5 : 1.1; ty = 1.5; tz = -2.6;
+    tx = wide ? -1.95 : 1.1; ty = 1.5; tz = -2.6;
     px = (wide ? 3.3 : 2.6) + s * 0.5; py = 1.62 + s * 0.08; pz = wide ? 3.3 : 4.6;
     dof = 0.85; focus = Math.hypot(px - 1.2, pz + 1.2);
   } else {
