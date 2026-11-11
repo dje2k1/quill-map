@@ -16,11 +16,11 @@ Ouvrir `index.html` dans un navigateur.
 
 # 17 Octobre : défends la boutique
 
-Beat'em up en 3D (vue de dessus, esprit arène) dans le dossier `17-octobre/`. Tu incarnes le Responsable d'une boutique Micromania à Nice, la nuit des émeutes du 17 octobre, et tu défends le magasin contre des vagues de casseurs.
+Beat'em up en 3D (caméra à la troisième personne) dans le dossier `17-octobre/`. Tu incarnes le Responsable d'une boutique Micromania à Nice, la nuit des émeutes du 17 octobre, et tu défends le magasin contre des vagues de casseurs.
 
 ## Utilisation
 
-Ouvrir `17-octobre/index.html` dans un navigateur récent (connexion requise : Three.js r128 et ses modules de post-traitement sont chargés depuis cdnjs et jsDelivr, les polices depuis Google Fonts). Jouable au clavier sur PC et au tactile sur mobile (joystick + boutons).
+Ouvrir `17-octobre/index.html` dans un navigateur récent compatible WebGL 2 (Chrome, Edge, Firefox, Safari 15+). Connexion requise : le moteur Three.js r186 et ses modules de post-traitement sont chargés depuis jsDelivr, les polices depuis Google Fonts. Tout le reste (personnages, textures, décor, sons) est fabriqué par le programme au lancement, ce qui prend quelques secondes. Jouable au clavier, à la manette et au tactile (joystick + boutons).
 
 | Action | Clavier | Manette PS4 | Tactile |
 | --- | --- | --- | --- |
@@ -42,21 +42,23 @@ La manette vibre à chaque impact (navigateurs compatibles).
 - **Charge d'épaule** : frappe juste après une esquive, renverse tout sur son passage.
 - **Saisie** : on soulève un casseur au-dessus de sa tête et on le projette sur les autres.
 - **Combo** : compteur de coups (multiplicateur de score), cassé quand on encaisse.
-- **Colère du gérant** : la jauge se remplit en frappant ; une fois pleine, le Responsable bondit et retombe dans une énorme onde de choc, avec ralenti et zoom.
+- **Colère du gérant** : la jauge se remplit en frappant ; une fois pleine, le Responsable bondit et retombe dans une énorme onde de choc, avec ralenti, zoom, éclairs et sol fissuré.
 - Les casseurs tournent autour du joueur et n'attaquent qu'à deux à la fois.
 
 ## Graphismes
 
-- Rendu physique (PBR) : textures générées au lancement (bitume mouillé avec flaques, dalles de trottoir, carrelage brillant, tissus, jean, cheveux, métal brossé).
-- Nuit : clair de lune avec ombres portées douces, lampadaires au sodium, néons de la boutique, feux (poubelle, voiture brûlée) qui vacillent, gyrophares lors de l'appel aux CRS, reflets d'environnement.
-- Post-traitement en mode **Ultra** : bloom, tone mapping ACES, étalonnage, vignette, grain, légère aberration chromatique, FXAA. Le mode **Performance** (par défaut sur mobile) coupe le post-traitement et réduit les ombres ; bouton « Graphismes » sur l'écran titre et dans le menu pause.
-- Caméra basse à la troisième personne qui suit le Responsable, entre dans la boutique avec lui et zoome sur les coups spéciaux.
-- Personnages articulés (épaules, coudes, hanches, genoux) avec marche, coups, projections, chutes et toux sous les gaz.
-- Le Responsable : visage sculpté, cheveux longs bruns en mèches qui bougent, barbe, forte corpulence. Tous les réglages d'apparence sont dans l'objet `GERANT` en haut du script (teint, cheveux, longueur, barbe, lunettes, vêtements, corpulence, taille).
+- **Moteur** : Three.js r186 (WebGL 2), rendu HDR avec anticrénelage MSAA, occlusion ambiante (GTAO), bloom, étalonnage ACES, profondeur de champ, aberration chromatique, vignette et grain.
+- **Personnages** : le Responsable, les casseurs, les voleurs et le Chef sont sculptés par le programme au lancement (champs de distance transformés en maillages lissés, puis squelette et déformation de peau) : corps, visages, mains, plis des vêtements, capuches, cagoules, casque. Shaders de tissu (molleton, jersey, jean, nylon, cuir), de peau (la lumière diffuse sous la surface, barbe, sourcils) et de cheveux ; liseré de contre-jour pour détacher les silhouettes de la rue. Cheveux et ventre du gérant bougent par ressorts.
+- **Décor** : une avenue niçoise la nuit, sous la pluie. Textures en relief calculées sur la carte graphique (dalles, bitume, crépi, béton, métal, rideaux de fer) ; sol mouillé avec flaques, ondes de pluie et reflets en temps réel ; boutique vitrée (rayonnages, gondoles, écrans de démo, sol poli) ; immeubles à persiennes et balcons en fer forgé, pharmacie, tabac, palmiers, rails du tramway, voiture brûlée.
+- **Lumières** : intensités physiques, clair de lune, lampadaires au sodium et leur cône dans la brume, lumière de la boutique projetée sur le trottoir avec l'ombre des piliers, néons qui grésillent, feux qui vacillent, gyrophares de l'appel aux CRS, éclairs d'orage à l'arrivée du Chef, reflets d'ambiance photographiés dans la scène.
+- **Effets spéciaux** : étincelles et éclairs électriques aux impacts, traînées lumineuses des coups, ondes de choc qui déforment l'image, fissures incandescentes au sol, poussière et gaz lacrymogène éclairés par la rue, éclats de verre, flammes, braises, fumée, pluie, flou radial, bandes cinéma et ralenti sur les coups spéciaux.
+- **Qualité** : **Ultra**, **Élevé** ou **Performance** (bouton « Graphismes » sur l'écran titre et dans le menu pause, ou `?q=ultra`, `?q=high`, `?q=perf` dans l'adresse). Ultra par défaut sur ordinateur, Performance sur mobile. Si l'affichage passe sous 27 images par seconde, le jeu descend lui-même d'un cran.
+- **Caméra** : troisième personne, elle se rapproche quand la bagarre est serrée, recule quand les casseurs arrivent de loin, plonge dans la boutique quand on y entre (la façade s'efface) et zoome sur les coups spéciaux.
+- **Le Responsable** : forte corpulence, cheveux longs bruns, barbe. Tous les réglages d'apparence sont dans l'objet `GERANT` en haut du script (teint, cheveux et leur longueur, barbe, t-shirt et logo, jean, chaussures, corpulence, taille).
 
 ## Gameplay
 
-- **Vagues** de casseurs de plus en plus nombreuses ; toutes les 5 vagues, le **Chef des casseurs** (casque, panneau STOP, charges) arrive. Le battre déclenche une livraison (+3 par rayon, vitrines réparées).
+- **Vagues** de casseurs de plus en plus nombreuses ; toutes les 5 vagues, le **Chef des casseurs** (casque, panneau STOP, charges) arrive sous l'orage. Le battre déclenche une livraison (+3 par rayon, vitrines réparées).
 - **Casseurs** : casseurs (parfois armés d'une barre de fer ou d'une batte, cassent les vitrines), voleurs rapides (foncent sur les consoles et les cartes), lanceurs de pavés.
 - **Armes** : désarme les casseurs et ramasse leurs barres, battes et pavés ; lance manettes, PC portables ou consoles (chaque console lancée coûte 1 en stock) ; soulève chaises, barrières, poubelles et présentoirs.
 - **Appel CRS** : 2 au départ, des grenades lacrymogènes dispersent tous les casseurs touchés (ils lâchent armes et butin).

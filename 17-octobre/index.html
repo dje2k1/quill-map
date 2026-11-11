@@ -382,7 +382,7 @@ function store(key, val) {
 function seeded(seed) { let s = (seed * 2654435761) >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 // Écran de chargement : affiche l'étape puis laisse le navigateur peindre
 let loadStep = 0;
-const LOAD_STEPS = 9;
+const LOAD_STEPS = 7;
 function step(label) {
   loadStep++;
   const t = $('loadTxt'), b = $('loadBar');
@@ -1267,6 +1267,8 @@ const G = {
   cyl: (a, b, h, s = 16) => cg(`c${a}_${b}_${h}_${s}`, () => new THREE.CylinderGeometry(a, b, h, s)),
   box: (w, h, d) => cg(`b${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d)),
   plane: (w, h) => cg(`pl${w}_${h}`, () => new THREE.PlaneGeometry(w, h)),
+  // boîtier de jeu : la jaquette sur la face avant, la tranche prend la couleur du bandeau du bas
+  caseBox: () => cg('caseBox', () => { const g = new THREE.BoxGeometry(0.24, 0.32, 0.045), uv = g.attributes.uv; for (let i = 0; i < 24; i++) if ((i >> 2) !== 4) uv.setXY(i, 0.5, 0.04); return g; }),
   octa: r => cg(`oc${r}`, () => new THREE.OctahedronGeometry(r)),
   rbox: (w, h, d, r = 0.02) => cg(`rb${w}_${h}_${d}_${r}`, () => roundedBox(w, h, d, r)),
   capsule: (r1, r2, len, seg = 14) => cg(`cap${r1}_${r2}_${len}`, () => {
@@ -1288,6 +1290,50 @@ function roundedBox(w, h, d, r) {
   }
   geo.computeVertexNormals();
   return geo;
+}
+// Soude plusieurs maillages en une seule géométrie (positions dans le repère du monde ou du groupe parent)
+const _mv = new THREE.Vector3(), _mn = new THREE.Matrix3(), _mc = new THREE.Color();
+function mergeMeshes(list, withColor) {
+  let nv = 0, ni = 0;
+  for (const o of list) { const g = o.geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
+  const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), UV = new Float32Array(nv * 2), C = withColor ? new Float32Array(nv * 3) : null, I = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let vo = 0, io = 0;
+  for (const o of list) {
+    const g = o.geometry, p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv, ix = g.index, M = o.matrixWorld, flip = M.determinant() < 0;
+    _mn.getNormalMatrix(M);
+    if (C) _mc.copy(o.material.color);
+    for (let i = 0; i < p.count; i++) {
+      const k = (vo + i) * 3;
+      _mv.fromBufferAttribute(p, i).applyMatrix4(M); P[k] = _mv.x; P[k + 1] = _mv.y; P[k + 2] = _mv.z;
+      _mv.fromBufferAttribute(n, i).applyMatrix3(_mn).normalize(); N[k] = _mv.x; N[k + 1] = _mv.y; N[k + 2] = _mv.z;
+      UV[(vo + i) * 2] = uv.getX(i); UV[(vo + i) * 2 + 1] = uv.getY(i);
+      if (C) { C[k] = _mc.r; C[k + 1] = _mc.g; C[k + 2] = _mc.b; }
+    }
+    const cnt = ix ? ix.count : p.count;
+    for (let i = 0; i < cnt; i += 3) {
+      const a = ix ? ix.getX(i) : i, b = ix ? ix.getX(i + 1) : i + 1, c = ix ? ix.getX(i + 2) : i + 2;
+      I[io++] = vo + a; I[io++] = vo + (flip ? c : b); I[io++] = vo + (flip ? b : c);
+    }
+    vo += p.count;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(UV, 2));
+  if (C) geo.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  geo.setIndex(new THREE.BufferAttribute(I, 1));
+  return geo;
+}
+// Objet composé de plusieurs pièces : une seule pièce par matière (géométrie mise en cache par sorte d'objet)
+function compact(g, key) {
+  g.updateMatrixWorld(true);
+  const by = new Map();
+  g.traverse(o => { if (!o.isMesh || Array.isArray(o.material)) return; const k = o.material.uuid + (o.castShadow ? 'c' : '') + (o.receiveShadow ? 'r' : ''); if (!by.has(k)) by.set(k, []); by.get(k).push(o); });
+  for (const [k, list] of by) {
+    if (list.length < 2) continue;
+    const geo = cg('cmp_' + key + k, () => mergeMeshes(list)), f = list[0];
+    for (const o of list) o.parent.remove(o);
+    g.add(mesh(geo, f.material, f.castShadow, f.receiveShadow));
+  }
+  return g;
 }
 function mesh(geo, mat, cast = true, receive = true) {
   const m = new THREE.Mesh(geo, mat);
@@ -1996,7 +2042,8 @@ function makeHuman(M, parts, o) {
 }
 function addEyes(c) {
   const mat = cached('eyeMat', () => new MS({ map: TEX.eye, roughness: 0.22, envMapIntensity: 0.9 }));
-  for (const sd of [-1, 1]) { const e = mesh(G.sphere(0.0122, 16, 12), mat, false, false); e.position.set(HEADC[0] + sd * 0.032, HEADC[1] + 0.002, HEADC[2] + 0.0808); c.head.add(e); }
+  const geo = cg('eyes', () => mergeMeshes([-1, 1].map(sd => { const e = new THREE.Mesh(G.sphere(0.0122, 16, 12)); e.position.set(HEADC[0] + sd * 0.032, HEADC[1] + 0.002, HEADC[2] + 0.0808); e.updateMatrixWorld(); return e; })));
+  const e = mesh(geo, mat, false, false); e.userData.noRefl = true; c.head.add(e);
 }
 function disposeChar(c) { for (const m of c.mats) m.dispose(); for (const m of c.extra) if (m.dispose) m.dispose(); c.skeleton.dispose(); }
 function setFlash(c, on, kind = flashMat) {
@@ -2124,6 +2171,7 @@ const STOCKDEF = {
 };
 const TABLE_W = 3.9, TABLE_D = 1.4;
 const facadeMats = [], windows = [], tableProducts = {}, glassShards = [];
+const facadeGlass = new THREE.Group();   // vitrages, autocollants et porte : masqués d'un bloc quand la façade s'efface
 const LIGHTS = [];         // lumières ponctuelles : elles éclairent aussi la fumée et les gaz
 const LT = {};             // accès par nom
 const fadeMat = m => { m.transparent = true; facadeMats.push(m); return m; };
@@ -2149,21 +2197,28 @@ function boxUV(w, h, d, tile) {   // boîte dont la texture se répète tous les
   for (let i = 0; i < 24; i++) { const f = i >> 2, su = f < 2 ? d : w, sv = (f === 2 || f === 3) ? d : h; uv.setXY(i, uv.getX(i) * su / tile, uv.getY(i) * sv / tile); }
   return g;
 }
+// Produits en rayon : une ou deux pièces par article, hors des passes d'ombre, de reflet et d'occlusion (ils sont petits et nombreux)
 function productMesh(kind) {
   const g = new THREE.Group();
   if (kind === 'jeux') {
-    const ci = (productMesh.n = (productMesh.n || 0) + 1) % 8, edge = plain([0x1040d0, 0x1a8a2a, 0xc41a1a][ci % 3], 0.4);
-    g.add(mesh(G.box(0.24, 0.32, 0.045), [edge, edge, edge, edge, cached('cov' + ci, () => new MS({ map: TEX.covers[ci], roughness: 0.3 })), plain(0x1a1a1a, 0.4)]));
+    const ci = (productMesh.n = (productMesh.n || 0) + 1) % 8;
+    g.add(mesh(G.caseBox(), cached('cov' + ci, () => new MS({ map: TEX.covers[ci], roughness: 0.3 }))));
   } else if (kind === 'consoles') {
     const side = plain(0xe8e8ea, 0.28), core = plain(0x0e0f11, 0.22);
     g.add(mesh(G.rbox(0.17, 0.56, 0.28, 0.02), core));
     [-1, 1].forEach(s => { const p = mesh(G.rbox(0.06, 0.6, 0.3, 0.028), side); p.position.x = s * 0.11; g.add(p); });
     const led = mesh(G.box(0.02, 0.2, 0.005), emissive(0x4a9aff, 4), false); led.position.set(0, 0.1, 0.144); g.add(led);
+    compact(g, 'console');
   } else {
     const k = (productMesh.c = (productMesh.c || 0) + 1) % 3;
-    g.add(mesh(G.rbox(0.2, 0.3, 0.035, 0.01), cached('foil' + k, () => new MS({ color: [0xffc23a, 0x3a7aff, 0xff4a3a][k], metalness: 0.8, roughness: 0.26 }))));
-    const band = mesh(G.box(0.2, 0.07, 0.037), plain(0xffd84a, 0.4), false); band.position.y = 0.09; g.add(band);
+    const geo = cg('cards' + k, () => {   // paquet métallisé et bandeau jaune : une seule pièce, teintes par sommet
+      const a = new THREE.Mesh(G.rbox(0.2, 0.3, 0.035, 0.01), new THREE.MeshBasicMaterial({ color: [0xffc23a, 0x3a7aff, 0xff4a3a][k] })), b = new THREE.Mesh(G.box(0.2, 0.07, 0.037), new THREE.MeshBasicMaterial({ color: 0xffd84a }));
+      b.position.y = 0.09; a.updateMatrixWorld(); b.updateMatrixWorld();
+      return mergeMeshes([a, b], true);
+    });
+    g.add(mesh(geo, cached('foilVC', () => new MS({ vertexColors: true, metalness: 0.8, roughness: 0.26 }))));
   }
+  g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.userData.noRefl = true; o.userData.fx = true; } });
   return g;
 }
 
@@ -2336,7 +2391,7 @@ function buildShop() {
   // gondoles produits
   for (const k in STOCKDEF) {
     const d = STOCKDEF[k];
-    const top = mesh(G.rbox(TABLE_W, 0.1, TABLE_D, 0.03), plain(0xe9e9ea, 0.3)); top.position.set(d.x, 0.95, d.z); scene.add(top);
+    const top = mesh(G.rbox(TABLE_W, 0.1, TABLE_D, 0.03), plain(0xa3a6ad, 0.3)); top.position.set(d.x, 0.95, d.z); scene.add(top);
     const base = mesh(G.box(TABLE_W - 0.3, 0.9, TABLE_D - 0.3), plain(0x1a1b20, 0.5)); base.position.set(d.x, 0.45, d.z); scene.add(base);
     const strip2 = mesh(G.box(TABLE_W - 0.25, 0.04, 0.02), emissive(0xff3a2a, 5), false); strip2.position.set(d.x, 0.88, d.z + TABLE_D / 2 - 0.14); scene.add(strip2);
     solid(d.x - TABLE_W / 2, d.x + TABLE_W / 2, d.z - TABLE_D / 2, d.z + TABLE_D / 2, 1.05);
@@ -2345,6 +2400,7 @@ function buildShop() {
       const c2 = i % d.cols, row = Math.floor(i / d.cols), p = productMesh(k), hh = k === 'consoles' ? 0.3 : k === 'jeux' ? 0.16 : 0.15;
       p.position.set(d.x + (c2 - (d.cols - 1) / 2) * d.sx, 1.0 + hh, d.z + (row - 0.5) * d.sz);
       if (k !== 'consoles') p.rotation.x = -0.25;
+      p.userData.keep = true;   // retiré du rayon quand il est volé : reste un objet à part
       scene.add(p); arr.push(p);
     }
     tableProducts[k] = arr;
@@ -2353,7 +2409,7 @@ function buildShop() {
   const shelf = mesh(G.box(3.2, 1.2, 0.7), plain(0x1a1b20, 0.5)); shelf.position.set(-11.5, 0.6, -14.5); scene.add(shelf);
   solid(-13.1, -9.9, -14.9, -14.15, 1.2);
   for (let i = 0; i < 5; i++) { const m = throwMesh('manette'); m.position.set(-12.9 + i * 0.7, 1.27, -14.45); scene.add(m); }
-  const lt = mesh(G.rbox(3.2, 0.1, 1.2, 0.03), plain(0xe9e9ea, 0.3)); lt.position.set(11.5, 0.95, -13); scene.add(lt);
+  const lt = mesh(G.rbox(3.2, 0.1, 1.2, 0.03), plain(0xa3a6ad, 0.3)); lt.position.set(11.5, 0.95, -13); scene.add(lt);
   const ltb = mesh(G.box(2.9, 0.9, 0.9), plain(0x1a1b20, 0.5)); ltb.position.set(11.5, 0.45, -13); scene.add(ltb);
   solid(9.9, 13.1, -13.6, -12.4, 1.05);
   for (let i = 0; i < 3; i++) { const m = throwMesh('laptop'); m.position.set(10.5 + i, 1.02, -13); scene.add(m); }
@@ -2365,13 +2421,14 @@ function buildShop() {
   // podiums de vitrine
   const boxes = new Batch(new THREE.BoxGeometry(0.62, 0.4, 0.4), new MS({ map: TEX.caseArt, roughness: 0.5 }), { cast: true });
   [-9.5, -5.6, 5.6, 9.5].forEach(x => {
-    const pod = mesh(G.box(2.2, 0.5, 0.9), plain(0xd8d8da, 0.4)); pod.position.set(x, 0.25, -4.95); scene.add(pod);
+    const pod = mesh(G.box(2.2, 0.5, 0.9), plain(0xa3a6ad, 0.4)); pod.position.set(x, 0.25, -4.95); scene.add(pod);
     for (let i = 0; i < 5; i++) boxes.add(x - 0.7 + (i % 3) * 0.7 + (i > 2 ? 0.35 : 0), 0.7 + (i > 2 ? 0.4 : 0), -4.95, 1, 1, 1, rand(-0.25, 0.25), col());
   });
   boxes.build();
 }
 
 function buildStorefront() {
+  scene.add(facadeGlass);
   const stone = fadeMat(pbr(TEX.concrete, { color: 0x4a4c53 })), alu = fadeMat(new MS({ color: 0x15161a, roughness: 0.38, metalness: 0.7 }));
   const pillar = (x0, x1) => { const m = facadeObj(mesh(boxUV(x1 - x0, 3.5, 0.5, 2.6), stone)); m.position.set((x0 + x1) / 2, 1.75, FZ); scene.add(m); solid(x0, x1, FZ - 0.25, FZ + 0.25, 4); };
   pillar(-14.75, -11); pillar(-4, -2); pillar(2, 4); pillar(11, 14.75);
@@ -2384,32 +2441,33 @@ function buildStorefront() {
   const tube = facadeObj(mesh(G.cyl(0.03, 0.03, 28.6, 8), neonM, false, false)); tube.rotation.z = Math.PI / 2; tube.position.set(0, 3.42, FZ + 0.42); scene.add(tube);
   LT.neonM = neonM; LT.signM = signM;
   const flagM = fadeMat(new MS({ color: 0x050505, emissive: 0xffffff, emissiveMap: TEX.flag, emissiveIntensity: 1.5 }));
-  const flag = facadeObj(mesh(G.box(0.14, 1.15, 1.15), [flagM, flagM, alu, alu, alu, alu])); flag.position.set(-14.2, 5.0, FZ + 1.0); scene.add(flag);
+  const flag = facadeObj(mesh(G.box(0.14, 1.15, 1.15), alu)); flag.position.set(-14.2, 5.0, FZ + 1.0); scene.add(flag);
+  [-1, 1].forEach(sd => { const f = facadeObj(mesh(G.plane(1.15, 1.15), flagM, false, false)); f.position.set(-14.2 + sd * 0.072, 5.0, FZ + 1.0); f.rotation.y = sd * Math.PI / 2; scene.add(f); });
   // vitrines (cassables) : cadre alu, vitrage, autocollants
-  const frameM = metalMat(0x22242a, 0.7);
+  const frameM = fadeMat(pbr(TEX.metal, { color: 0x22242a, metal: 1, rough: 0.7, ns: 0.6 }));
   [[-11, -4], [4, 11]].forEach(([x0, x1], i) => {
     const cx = (x0 + x1) / 2, w = x1 - x0;
     const gm = glassMat({ opacity: 0.09 });
-    const glass = mesh(G.box(w - 0.1, 3.1, 0.05), gm, false, false); glass.position.set(cx, 1.85, FZ); glass.userData.fx = true; glass.renderOrder = 3; scene.add(glass);
+    const glass = mesh(G.box(w - 0.1, 3.1, 0.05), gm, false, false); glass.position.set(cx, 1.85, FZ); glass.userData.fx = true; glass.renderOrder = 3; facadeGlass.add(glass);
     const crackMat = new THREE.MeshBasicMaterial({ map: TEX.glassCracks, transparent: true, opacity: 0, depthWrite: false, color: new THREE.Color(1.6, 1.7, 1.8) });
-    const crack = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.1, 3.1), crackMat); crack.position.set(cx, 1.85, FZ + 0.04); crack.userData.fx = true; crack.renderOrder = 4; scene.add(crack);
+    const crack = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.1, 3.1), crackMat); crack.position.set(cx, 1.85, FZ + 0.04); crack.userData.fx = true; crack.renderOrder = 4; facadeGlass.add(crack);
     const sill = mesh(boxUV(w, 0.3, 0.6, 2.6), stone); facadeObj(sill); sill.position.set(cx, 0.15, FZ); scene.add(sill);
-    [[cx, 3.44, w, 0.1], [cx, 0.33, w, 0.07]].forEach(([x, y, ww, hh]) => { const f = mesh(G.box(ww, hh, 0.14), frameM); f.position.set(x, y, FZ); scene.add(f); });
-    [x0 + 0.05, cx, x1 - 0.05].forEach(x => { const f = mesh(G.box(0.07, 3.1, 0.14), frameM); f.position.set(x, 1.88, FZ); scene.add(f); });
-    const st = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.7), new MS({ map: TEX.stickSoldes, transparent: true, alphaTest: 0.3, emissive: 0xffffff, emissiveMap: TEX.stickSoldes, emissiveIntensity: 0.35 })); st.position.set(cx + (i ? 1.6 : -1.6), 2.75, FZ + 0.035); st.userData.fx = true; scene.add(st);
+    [[cx, 3.44, w, 0.1], [cx, 0.33, w, 0.07]].forEach(([x, y, ww, hh]) => { const f = facadeObj(mesh(G.box(ww, hh, 0.14), frameM)); f.position.set(x, y, FZ); scene.add(f); });
+    [x0 + 0.05, cx, x1 - 0.05].forEach(x => { const f = facadeObj(mesh(G.box(0.07, 3.1, 0.14), frameM)); f.position.set(x, 1.88, FZ); scene.add(f); });
+    const st = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.7), new MS({ map: TEX.stickSoldes, transparent: true, alphaTest: 0.3, emissive: 0xffffff, emissiveMap: TEX.stickSoldes, emissiveIntensity: 0.35 })); st.position.set(cx + (i ? 1.6 : -1.6), 2.75, FZ + 0.035); st.userData.fx = true; facadeGlass.add(st);
     const s = solid(x0, x1, FZ - 0.2, FZ + 0.2, 4);
     windows.push({ id: i, x0, x1, hp: 6, maxHp: 6, broken: false, glass, mat: gm, crack, crackMat, solid: s, deco: [st] });
   });
   // porte vitrée à deux battants, ouverts vers l'intérieur
   const doorG = glassMat({ opacity: 0.12 });
   [-1, 1].forEach(s => {
-    const leaf = new THREE.Group(); leaf.position.set(s * 1.95, 0, FZ - 0.1); leaf.rotation.y = s * 1.35; scene.add(leaf);
+    const leaf = new THREE.Group(); leaf.position.set(s * 1.95, 0, FZ - 0.1); leaf.rotation.y = s * 1.35; facadeGlass.add(leaf);
     const gl = mesh(G.box(1.85, 3.0, 0.04), doorG, false, false); gl.position.set(-s * 0.95, 1.7, 0); gl.userData.fx = true; leaf.add(gl);
-    [[0, 1.7, 0.07, 3.1], [-s * 1.88, 1.7, 0.07, 3.1]].forEach(([x, y, ww, hh]) => { const f = mesh(G.box(ww, hh, 0.07), frameM); f.position.set(x, y, 0); leaf.add(f); });
-    [0.2, 3.22].forEach(y => { const f = mesh(G.box(1.9, 0.08, 0.07), frameM); f.position.set(-s * 0.95, y, 0); leaf.add(f); });
-    const h = mesh(G.cyl(0.02, 0.02, 0.7, 8), metalMat(0xd0d4da, 0.4)); h.position.set(-s * 1.7, 1.45, 0.06); leaf.add(h);
+    [[0, 1.7, 0.07, 3.1], [-s * 1.88, 1.7, 0.07, 3.1]].forEach(([x, y, ww, hh]) => { const f = facadeObj(mesh(G.box(ww, hh, 0.07), frameM)); f.position.set(x, y, 0); leaf.add(f); });
+    [0.2, 3.22].forEach(y => { const f = facadeObj(mesh(G.box(1.9, 0.08, 0.07), frameM)); f.position.set(-s * 0.95, y, 0); leaf.add(f); });
+    const h = facadeObj(mesh(G.cyl(0.02, 0.02, 0.7, 8), frameM)); h.position.set(-s * 1.7, 1.45, 0.06); leaf.add(h);
   });
-  const hrs = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new MS({ map: TEX.stickHours, transparent: true, alphaTest: 0.3 })); hrs.position.set(-3, 1.7, FZ + 0.27); hrs.userData.fx = true; facadeObj(hrs); scene.add(hrs);
+  const hrs = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new MS({ map: TEX.stickHours, transparent: true, alphaTest: 0.3 })); hrs.position.set(-3, 1.7, FZ + 0.27); hrs.userData.fx = true; facadeGlass.add(hrs);
 }
 
 // Façade d'immeuble niçois : crépi coloré, fenêtres à persiennes, balcons en fer forgé, corniche
@@ -2466,7 +2524,8 @@ function buildFacades() {
     if (i) LT.cafeM = sm; else LT.pharmaM = sm;
   });
   LT.crossM = new MS({ color: 0x030303, emissive: 0xffffff, emissiveMap: TEX.cross, emissiveIntensity: 4 });
-  const cross = mesh(G.box(0.12, 1.2, 1.2), [LT.crossM, LT.crossM, plain(0x111111), plain(0x111111), plain(0x111111), plain(0x111111)], false); cross.position.set(-16.2, 5.6, FZ + 1.0); scene.add(cross);
+  const cross = mesh(G.box(0.12, 1.2, 1.2), plain(0x111111), false); cross.position.set(-16.2, 5.6, FZ + 1.0); scene.add(cross);
+  [-1, 1].forEach(sd => { const f = mesh(G.plane(1.2, 1.2), LT.crossM, false, false); f.position.set(-16.2 + sd * 0.062, 5.6, FZ + 1.0); f.rotation.y = sd * Math.PI / 2; scene.add(f); });
   // immeuble d'en face (hors champ, visible dans les reflets)
   const ob = mesh(G.box(74, 17, 6), new MS({ map: TEX.oppo, emissive: 0xffffff, emissiveMap: TEX.oppo, emissiveIntensity: 0.9, roughness: 0.9 }), false, false); ob.position.set(0, 8.5, 31.5); scene.add(ob);
 }
@@ -2578,9 +2637,32 @@ function captureEnvironment() {
   scene.environment = pm.fromCubemap(rt.texture).texture; scene.environmentIntensity = 0.75;
   pm.dispose(); rt.dispose();
 }
+// Fusionne les pièces fixes du décor qui partagent matière et réglages : quelques dizaines d'appels de rendu au lieu de plusieurs centaines
+function mergeStatic() {
+  scene.updateMatrixWorld(true);
+  const groups = new Map();
+  const kept = o => { for (let p = o; p; p = p.parent) if (p.userData.keep) return true; return false; };
+  scene.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || Array.isArray(o.material) || o.material.isShaderMaterial || kept(o)) return;
+    const m = o.material, a = o.geometry.attributes;
+    if ((m.transparent && !facadeMats.includes(m)) || !a.position || !a.normal || !a.uv) return;
+    const key = [m.uuid, +o.castShadow, +o.receiveShadow, +!!o.userData.fx, +!!o.userData.noRefl, +!!o.userData.facade, o.renderOrder].join('_');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(o);
+  });
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const f = list[0], mm = new THREE.Mesh(mergeMeshes(list), f.material);
+    for (const o of list) o.parent.remove(o);
+    mm.castShadow = f.castShadow; mm.receiveShadow = f.receiveShadow; mm.renderOrder = f.renderOrder;
+    if (f.userData.fx) mm.userData.fx = true; if (f.userData.noRefl) mm.userData.noRefl = true; if (f.userData.facade) mm.userData.facade = true;
+    scene.add(mm);
+  }
+}
 function buildWorld() {
   initWorldTextures();
   buildSky(); buildGround(); buildShop(); buildStorefront(); buildFacades(); buildStreet(); buildLights();
+  mergeStatic();
 }
 
 // =====================================================================
@@ -2657,7 +2739,7 @@ function throwMesh(kind) {
     case 'presentoir': {
       const b = mesh(G.rbox(0.7, 1.5, 0.4, 0.03), plain(0x1d1f24, 0.5)); b.position.y = 0.75; g.add(b);
       const tex = TEX.covers[(Math.random() * 8) | 0];
-      const p1 = mesh(G.box(0.62, 0.8, 0.02), new MS({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5, roughness: 0.4 }), false); p1.position.set(0, 0.95, 0.21); g.add(p1);
+      const p1 = mesh(G.box(0.62, 0.8, 0.02), cached('pres' + tex.uuid, () => new MS({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5, roughness: 0.4 })), false); p1.position.set(0, 0.95, 0.21); g.add(p1);
       break;
     }
   }
@@ -2686,9 +2768,9 @@ function makeItem(kind, opts = {}) {
   const def = DEFS[kind] || null;
   let m;
   if (opts.loot) m = productMesh(opts.loot);
-  else if (opts.bonus) m = bonusMesh(opts.bonus);
-  else if (def && def.cls === 'melee') m = weaponMesh(kind);
-  else m = throwMesh(kind);
+  else if (opts.bonus) m = compact(bonusMesh(opts.bonus), 'b' + opts.bonus);
+  else if (def && def.cls === 'melee') m = compact(weaponMesh(kind), 'w' + kind);
+  else m = compact(throwMesh(kind), 't' + kind);
   m.rotation.order = 'YXZ';
   const it = {
     kind, def, mesh: m, pos: new V3(), vel: new V3(), state: 'ground', ttl: opts.ttl || 0, dur: def && def.dur ? def.dur : 0,
@@ -4459,7 +4541,8 @@ function updateCamera(dt) {
   } else {
     const x = player.pos.x, z = player.pos.z;
     tx = clamp(x * 0.92, -10, 10); ty = 1.05 + player.y * 0.35; tz = z - 1.3;
-    const dist = 9.9 * k * S.zoom, h = 4.3 * k * S.zoom;
+    const ins = smooth(FZ + 1.5, FZ - 2.5, z);   // dans la boutique : vue plus plongeante, par-dessus les vitrines
+    const dist = lerp(9.9, 8.8, ins) * k * S.zoom, h = lerp(4.3, 6.4, ins) * k * S.zoom;
     px = tx; pz = Math.max(tz + dist, 1.5); py = ty + h;
     if (S.zoomT > 0 || S.slowT > 0) { dof = 0.6; focus = Math.hypot(pz - z, py - 1.2); }
   }
@@ -4479,6 +4562,7 @@ function updateCamera(dt) {
   const inside = player && S.mode !== 'title' && player.pos.z < FZ + 0.2;
   facadeFade = lerp(facadeFade, inside ? 0 : 1, damp(0.001, dt));
   for (const m of facadeMats) { m.opacity = facadeFade; m.depthWrite = facadeFade > 0.9; m.visible = facadeFade > 0.02; }
+  facadeGlass.visible = facadeFade > 0.5;
 }
 
 // =====================================================================
