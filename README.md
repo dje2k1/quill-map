@@ -26,9 +26,9 @@ Ouvrir `17-octobre/index.html` dans un navigateur récent compatible WebGL 2 (Ch
 | --- | --- | --- | --- |
 | Se déplacer | ZQSD / WASD / flèches | stick gauche / croix | joystick |
 | Frapper / lancer | J ou clic gauche | □ | FRAPPER |
-| Sauter (puis frapper = plongeon) | Espace | ✕ | SAUT |
-| Prendre un objet / saisir un casseur | K ou clic droit | △ | PRENDRE |
-| Esquive (puis frapper = charge d'épaule) | Maj ou L | ○ | ESQUIVE |
+| Sauter (puis frapper = coup de pied sauté) | Espace | ✕ | SAUT |
+| Prendre un objet / saisir un casseur (en l'air = hélico) | K ou clic droit | △ | PRENDRE |
+| Esquive (puis frapper = coup de bide ; en l'air = plongeon) | Maj ou L | ○ | ESQUIVE |
 | Colère du gérant (jauge pleine) | F ou I | R1 / R2 | SPÉCIAL |
 | Appel CRS | C | L1 / L2 | CRS |
 | Pause | Échap ou P | Options | PAUSE |
@@ -37,13 +37,13 @@ La manette vibre à chaque impact (navigateurs compatibles).
 
 ## Combat
 
-- **Enchaînement** : direct, direct, uppercut (envoie le casseur en l'air, on peut le jongler), puis **coup de bide** qui le projette au loin.
-- **Plongeon** : saut puis frappe, onde de choc à l'atterrissage, touche aussi les casseurs au sol.
-- **Charge d'épaule** : frappe juste après une esquive, renverse tout sur son passage.
-- **Saisie** : on soulève un casseur au-dessus de sa tête et on le projette sur les autres.
+- **Enchaînement de 5 coups** : direct, crochet, coup de pied haut, coup de pied retourné (un tour complet, touche tout autour), puis **la baffe** qui expédie le casseur dans les étoiles.
+- **En l'air** : frapper = coup de pied sauté, prendre = l'hélico (grand écart tournoyant), esquive = plongeon ventral avec onde de choc.
+- **Coup de bide** : frappe juste après une esquive, renverse tout sur son passage.
+- **Saisie** : on soulève un casseur, puis on le fait tournoyer avant de le lâcher au loin (frapper), ou on le satellise à la verticale (sauter) ; il retombe en onde de choc.
 - **Combo** : compteur de coups (multiplicateur de score), cassé quand on encaisse.
 - **Colère du gérant** : la jauge se remplit en frappant ; une fois pleine, le Responsable bondit et retombe dans une énorme onde de choc, avec ralenti, zoom, éclairs et sol fissuré.
-- Les casseurs tournent autour du joueur et n'attaquent qu'à deux à la fois.
+- Les casseurs ont chacun leur démarche, provoquent, prennent de grands élans, titubent avec des étoiles quand ils sont sonnés, et s'envolent hors de l'écran sur les gros coups.
 
 ## Graphismes
 
@@ -52,7 +52,8 @@ La manette vibre à chaque impact (navigateurs compatibles).
 - **Décor** : une avenue niçoise la nuit, sous la pluie. Textures en relief calculées sur la carte graphique (dalles, bitume, crépi, béton, métal, rideaux de fer) ; sol mouillé avec flaques, ondes de pluie et reflets en temps réel ; boutique vitrée (rayonnages, gondoles, écrans de démo, sol poli) ; immeubles à persiennes et balcons en fer forgé, pharmacie, tabac, palmiers, rails du tramway, voiture brûlée.
 - **Lumières** : intensités physiques, clair de lune, lampadaires au sodium et leur cône dans la brume, lumière de la boutique projetée sur le trottoir avec l'ombre des piliers, néons qui grésillent, feux qui vacillent, gyrophares de l'appel aux CRS, éclairs d'orage à l'arrivée du Chef, reflets d'ambiance photographiés dans la scène.
 - **Effets spéciaux** : étincelles et éclairs électriques aux impacts, traînées lumineuses des coups, ondes de choc qui déforment l'image, fissures incandescentes au sol, poussière et gaz lacrymogène éclairés par la rue, éclats de verre, flammes, braises, fumée, pluie, flou radial, bandes cinéma et ralenti sur les coups spéciaux.
-- **Qualité** : **Ultra**, **Élevé** ou **Performance** (bouton « Graphismes » sur l'écran titre et dans le menu pause, ou `?q=ultra`, `?q=high`, `?q=perf` dans l'adresse). Ultra par défaut sur ordinateur, Performance sur mobile. Si l'affichage passe sous 27 images par seconde, le jeu descend lui-même d'un cran.
+- **Style dessin animé** : contour noir et aplats de lumière sur les personnages, couleurs vives, onomatopées de BD (« PAF ! », « VLAN ! »), écrasement et étirement des corps, fourgon de police aux gyrophares qui balaient la rue.
+- **Qualité** : **Ultra**, **Élevé** ou **Performance** (bouton « Graphismes » sur l'écran titre et dans le menu pause, ou `?q=ultra`, `?q=high`, `?q=perf` dans l'adresse). Élevé par défaut sur ordinateur, Performance sur mobile. Si l'affichage passe sous 34 images par seconde, le jeu descend lui-même d'un cran.
 - **Caméra** : troisième personne, elle se rapproche quand la bagarre est serrée, recule quand les casseurs arrivent de loin, plonge dans la boutique quand on y entre (la façade s'efface) et zoome sur les coups spéciaux.
 - **Le Responsable** : forte corpulence, cheveux longs bruns, barbe. Tous les réglages d'apparence sont dans l'objet `GERANT` en haut du script (teint, cheveux et leur longueur, barbe, t-shirt et logo, jean, chaussures, corpulence, taille).
 
